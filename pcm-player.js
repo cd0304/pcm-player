@@ -7,11 +7,13 @@ class PCMPlayer {
         this.startTime = 0;
         this.currentTime = 0;
         this.pausedAt = 0;
+        this.amplificationFactor = 1;
 
         this.initializeDOMElements();
 
         this.setupEventListeners();
         this.setupSampleButton();
+        this.setupAmplificationControl();
     }
 
     initializeDOMElements() {
@@ -88,6 +90,28 @@ class PCMPlayer {
             } catch (error) {
                 console.error('加载样例文件失败:', error);
                 alert('加载样例文件失败，请确保 test.pcm 文件存在');
+            }
+        });
+    }
+
+    setupAmplificationControl() {
+        const amplificationControl = document.createElement('div');
+        amplificationControl.className = 'control-group';
+        amplificationControl.innerHTML = `
+            <label for="amplificationRange">波形放大: <span id="amplificationValue">1x</span></label>
+            <input type="range" id="amplificationRange" min="1" max="10" step="0.5" value="1">
+        `;
+        
+        this.progressContainer.parentNode.insertBefore(amplificationControl, this.progressContainer);
+
+        const amplificationRange = document.getElementById('amplificationRange');
+        const amplificationValue = document.getElementById('amplificationValue');
+
+        amplificationRange.addEventListener('input', (e) => {
+            this.amplificationFactor = parseFloat(e.target.value);
+            amplificationValue.textContent = `${this.amplificationFactor}x`;
+            if (this.waveformPoints && this.audioBuffer) {
+                this.drawCurrentState();
             }
         });
     }
@@ -201,13 +225,13 @@ class PCMPlayer {
             }
 
             const average = sum / count;
-            const amplitude = average * centerY * 0.95;
+            const amplitude = average * centerY * 0.95 * this.amplificationFactor;
 
             // 存储波形点信息，包括位置、对应的音频时间和振幅
             this.waveformPoints.push({
                 x: i,
-                y: centerY + amplitude,
-                bottomY: centerY - amplitude,
+                y: Math.min(centerY + amplitude, height),
+                bottomY: Math.max(centerY - amplitude, 0),
                 timePosition: (startIndex / pcmData.length) * this.audioBuffer.duration
             });
         }
