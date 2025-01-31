@@ -11,6 +11,7 @@ class PCMPlayer {
         this.initializeDOMElements();
         
         this.setupEventListeners();
+        this.setupSampleButton();
     }
 
     initializeDOMElements() {
@@ -48,6 +49,47 @@ class PCMPlayer {
         this.stopButton.addEventListener('click', () => this.stop());
         
         this.canvas.addEventListener('click', (e) => this.handleProgressClick(e));
+    }
+
+    setupSampleButton() {
+        const loadSampleButton = document.getElementById('loadSampleButton');
+        loadSampleButton.addEventListener('click', async () => {
+            try {
+                const response = await fetch('./test.pcm');
+                if (!response.ok) {
+                    throw new Error('样例文件加载失败');
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                
+                if (!this.audioContext) {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                const pcmData = new Float32Array(arrayBuffer.byteLength / 2);
+                const dataView = new DataView(arrayBuffer);
+                
+                for (let i = 0; i < pcmData.length; i++) {
+                    const int16 = dataView.getInt16(i * 2, true);
+                    pcmData[i] = int16 / 32768.0;
+                }
+                
+                this.audioBuffer = this.audioContext.createBuffer(1, pcmData.length, this.sampleRate);
+                this.audioBuffer.getChannelData(0).set(pcmData);
+                
+                document.getElementById('playButton').disabled = false;
+                document.getElementById('stopButton').disabled = false;
+                
+                this.fileInfo.textContent = `文件名: test.pcm | 大小: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
+                this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
+                
+                this.drawWaveform(pcmData);
+                this.resetPlayButton('play');
+                
+            } catch (error) {
+                console.error('加载样例文件失败:', error);
+                alert('加载样例文件失败，请确保 test.pcm 文件存在');
+            }
+        });
     }
 
     handleProgressClick(e) {
