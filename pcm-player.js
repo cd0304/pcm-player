@@ -15,6 +15,7 @@ class PCMPlayer {
         this.setupEventListeners();
         this.setupSampleButton();
         this.setupSampleRateControl();
+        this.setupConvertButton();
     }
 
     initializeDOMElements() {
@@ -104,6 +105,13 @@ class PCMPlayer {
                 this.updateAudioBuffer();
             }
         });
+    }
+
+    setupConvertButton() {
+        const convertButton = document.getElementById('convertButton');
+        if (convertButton) {
+            convertButton.addEventListener('click', () => this.convertToMp3());
+        }
     }
 
     updateAudioBuffer() {
@@ -289,6 +297,7 @@ class PCMPlayer {
             // 更新 UI
             document.getElementById('playButton').disabled = false;
             document.getElementById('stopButton').disabled = false;
+            document.getElementById('convertButton').disabled = false;  // 启用转换按钮
 
             this.fileInfo.textContent = `文件名: ${file.name} | 大小: ${(file.size / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
             this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
@@ -306,6 +315,7 @@ class PCMPlayer {
             this.audioBuffer = null;
             document.getElementById('playButton').disabled = true;
             document.getElementById('stopButton').disabled = true;
+            document.getElementById('convertButton').disabled = true;  // 禁用转换按钮
             this.fileInfo.textContent = '文件处理失败';
             this.durationDisplay.textContent = '00:00';
         }
@@ -586,27 +596,177 @@ class PCMPlayer {
 
     // 添加从文件名识别采样率的方法
     detectSampleRateFromFileName(fileName) {
-        // 常见的采样率数值
-        const commonSampleRates = [8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000];
+        // 常见的采样率数值及其别名
+        const sampleRateMap = {
+            8000: ['8k', '8000'],
+            16000: ['16k', '16000'],
+            22050: ['22.05k', '22050'],
+            24000: ['24k', '24000'],
+            32000: ['32k', '32000'],
+            44100: ['44.1k', '44100'],
+            48000: ['48k', '48000'],
+            96000: ['96k', '96000']
+        };
+
+        // 标准化文件名（转小写，移除多余空格）
+        const normalizedName = fileName.toLowerCase().trim();
         
-        // 尝试从文件名中匹配数字
-        const matches = fileName.match(/[_-]?(\d{4,6})(hz|k)?[_-]?/i);
-        if (matches) {
-            let detectedRate = parseInt(matches[1]);
-            
-            // 如果数字是以k结尾，将其转换为完整的采样率
-            if (matches[2] && matches[2].toLowerCase() === 'k') {
-                detectedRate *= 1000;
+        try {
+            // 1. 首先尝试匹配标准格式
+            const standardPatterns = [
+                // 匹配 _24000Hz.pcm 或 _24000hz.pcm
+                /[_-](\d{4,6})hz\.pcm$/,
+                // 匹配 _24000.pcm
+                /[_-](\d{4,6})\.pcm$/,
+                // 匹配 _24k.pcm 或 _24khz.pcm
+                /[_-](\d{1,2})k(?:hz)?\.pcm$/,
+                // 匹配 24000Hz_ 格式
+                /(\d{4,6})hz[_-]/,
+                // 匹配 24k_ 格式
+                /(\d{1,2})k[_-]/
+            ];
+
+            for (const pattern of standardPatterns) {
+                const match = normalizedName.match(pattern);
+                if (match) {
+                    let rate = parseInt(match[1]);
+                    // 如果是 k 单位，转换为完整采样率
+                    if (pattern.toString().includes('k') && rate < 100) {
+                        rate *= 1000;
+                    }
+                    // 验证是否是有效的采样率
+                    if (sampleRateMap[rate]) {
+                        console.log(`从标准格式检测到采样率: ${rate}Hz`);
+                        return rate;
+                    }
+                }
             }
-            
-            // 验证检测到的采样率是否在合理范围内
-            if (commonSampleRates.includes(detectedRate)) {
-                console.log(`从文件名检测到采样率: ${detectedRate}Hz`);
-                return detectedRate;
+
+            // 2. 如果没有匹配到标准格式，尝试在文件名中查找所有可能的采样率
+            for (const [rate, aliases] of Object.entries(sampleRateMap)) {
+                for (const alias of aliases) {
+                    if (normalizedName.includes(alias)) {
+                        console.log(`从文件名中检测到采样率: ${rate}Hz`);
+                        return parseInt(rate);
+                    }
+                }
             }
+
+            // 3. 最后尝试一个更宽松的匹配（但要求必须带有hz标识）
+            const looseMatch = normalizedName.match(/(\d{1,6})hz/);
+            if (looseMatch) {
+                const rate = parseInt(looseMatch[1]);
+                if (sampleRateMap[rate]) {
+                    console.log(`从宽松匹配检测到采样率: ${rate}Hz`);
+                    return rate;
+                }
+            }
+
+            // 如果都没匹配到，使用默认值
+            console.log('未检测到有效采样率，使用默认值: 48000Hz');
+            return 48000;
+
+        } catch (error) {
+            console.error('采样率检测出错:', error);
+            return 48000;
         }
-        
-        console.log('未从文件名检测到有效采样率，使用默认值: 48000Hz');
-        return 48000;
+    }
+
+    async convertToMp3() {
+        if (!this.rawPcmData) {
+            alert('请先加载 PCM 文件');
+            return;
+        }
+
+        const convertButton = document.getElementById('convertButton');
+        const originalContent = convertButton.innerHTML;
+
+        try {
+            // 设置 loading 状态
+            convertButton.classList.add('loading');
+            convertButton.disabled = true;
+            convertButton.innerHTML = `
+                <div class="loading-spinner"></div>
+                转换中...
+            `;
+
+            // 获取源文件名
+            const fileInfoText = this.fileInfo.textContent;
+            let outputFileName = 'converted.mp3';
+            if (fileInfoText && fileInfoText !== '未选择文件') {
+                const match = fileInfoText.match(/文件名:\s*([^|]+)/);
+                if (match && match[1]) {
+                    // 移除原扩展名并添加 .mp3
+                    outputFileName = match[1].trim().replace(/\.[^/.]+$/, '') + '.mp3';
+                }
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
+            document.head.appendChild(script);
+
+            await new Promise((resolve, reject) => {
+                script.onload = resolve;
+                script.onerror = reject;
+            });
+
+            const mp3encoder = new lamejs.Mp3Encoder(1, this.sampleRate, 128);
+            const samples = new Int16Array(this.rawPcmData);
+            const mp3Data = [];
+
+            // 每次处理 1152 个采样点（这是 MP3 编码器的推荐值）
+            const blockSize = 1152;
+            for (let i = 0; i < samples.length; i += blockSize) {
+                const sampleChunk = samples.slice(i, i + blockSize);
+                const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+            }
+
+            // 完成编码
+            const end = mp3encoder.flush();
+            if (end.length > 0) {
+                mp3Data.push(end);
+            }
+
+            // 合并所有的 MP3 数据
+            const blob = new Blob(mp3Data, { type: 'audio/mp3' });
+
+            // 创建下载链接
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = outputFileName;
+
+            // 触发下载
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 短暂显示完成状态
+            convertButton.classList.remove('loading');
+            convertButton.innerHTML = `
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+                </svg>
+                已完成
+            `;
+
+            // 延迟后恢复按钮状态
+            setTimeout(() => {
+                convertButton.disabled = false;
+                convertButton.innerHTML = originalContent;
+                URL.revokeObjectURL(url);
+            }, 2000);
+
+        } catch (error) {
+            console.error('MP3 转换失败:', error);
+            alert('MP3 转换失败: ' + error.message);
+            // 恢复按钮状态
+            convertButton.classList.remove('loading');
+            convertButton.disabled = false;
+            convertButton.innerHTML = originalContent;
+        }
     }
 } 

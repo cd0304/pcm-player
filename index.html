@@ -125,6 +125,39 @@
             background: #e0e0e0;
         }
 
+        #convertButton {
+            background: #FF5722;
+            color: white;
+        }
+
+        #convertButton:hover:not(:disabled) {
+            background: #F4511E;
+        }
+
+        #convertButton.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        #convertButton.loading .loading-spinner {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
         .audio-info {
             margin-top: 20px;
             padding: 15px;
@@ -289,6 +322,12 @@
                     <path d="M6 6h12v12H6z"/>
                 </svg>
                 停止
+            </button>
+            <button id="convertButton" disabled>
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                转换为 MP3
             </button>
         </div>
 
