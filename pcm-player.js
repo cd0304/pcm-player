@@ -1,6 +1,6 @@
 class PCMPlayer {
     constructor() {
-        this.sampleRate = 24000;
+        this.sampleRate = 48000;
         this.isPlaying = false;
         this.audioBuffer = null;
         this.source = null;
@@ -8,19 +8,18 @@ class PCMPlayer {
         this.currentTime = 0;
         this.pausedAt = 0;
         this.amplificationFactor = 1;
+        this.rawPcmData = null;  // 存储原始PCM数据
 
         this.initializeDOMElements();
 
         this.setupEventListeners();
         this.setupSampleButton();
-        this.setupAmplificationControl();
+        this.setupSampleRateControl();
     }
 
     initializeDOMElements() {
         this.canvas = document.getElementById('waveformCanvas');
         this.ctx = this.canvas.getContext('2d');
-        this.progressBar = document.getElementById('progressBar');
-        this.progressContainer = document.getElementById('progressContainer');
         this.currentTimeDisplay = document.getElementById('currentTime');
         this.durationDisplay = document.getElementById('duration');
         this.fileInfo = document.getElementById('fileInfo');
@@ -94,26 +93,97 @@ class PCMPlayer {
         });
     }
 
-    setupAmplificationControl() {
-        const amplificationControl = document.createElement('div');
-        amplificationControl.className = 'control-group';
-        amplificationControl.innerHTML = `
-            <label for="amplificationRange">波形放大: <span id="amplificationValue">1x</span></label>
-            <input type="range" id="amplificationRange" min="1" max="10" step="0.5" value="1">
-        `;
-        
-        this.progressContainer.parentNode.insertBefore(amplificationControl, this.progressContainer);
+    setupSampleRateControl() {
+        const sampleRateSelect = document.getElementById('sampleRateSelect');
+        sampleRateSelect.value = this.sampleRate;
 
-        const amplificationRange = document.getElementById('amplificationRange');
-        const amplificationValue = document.getElementById('amplificationValue');
-
-        amplificationRange.addEventListener('input', (e) => {
-            this.amplificationFactor = parseFloat(e.target.value);
-            amplificationValue.textContent = `${this.amplificationFactor}x`;
-            if (this.waveformPoints && this.audioBuffer) {
-                this.drawCurrentState();
+        sampleRateSelect.addEventListener('change', (e) => {
+            const newSampleRate = parseInt(e.target.value);
+            if (this.rawPcmData && newSampleRate !== this.sampleRate) {
+                this.sampleRate = newSampleRate;
+                this.updateAudioBuffer();
             }
         });
+    }
+
+    updateAudioBuffer() {
+        if (!this.rawPcmData || !this.audioContext) {
+            console.warn('没有 PCM 数据或音频上下文');
+            return;
+        }
+
+        try {
+            // 停止当前播放
+            if (this.isPlaying) {
+                this.stop();
+            }
+
+            // 重置播放进度
+            this.currentTime = 0;
+            this.pausedAt = 0;
+            this.currentTimeDisplay.textContent = this.formatTime(0);
+
+            // 重新创建 Float32Array
+            const pcmData = new Float32Array(this.rawPcmData.byteLength / 2);
+            const dataView = new DataView(this.rawPcmData);
+
+            // 将 16 位整数转换为浮点数
+            for (let i = 0; i < pcmData.length; i++) {
+                const int16 = dataView.getInt16(i * 2, true);  // true 表示小端字节序
+                pcmData[i] = int16 / 32768.0;  // 归一化到 [-1, 1] 范围
+            }
+
+            // 验证数据
+            if (pcmData.length === 0) {
+                throw new Error('PCM 数据长度为 0');
+            }
+
+            console.log(`正在更新音频缓冲区 - 采样率: ${this.sampleRate}Hz, 数据长度: ${pcmData.length}`);
+
+            // 创建新的音频缓冲区
+            this.audioBuffer = this.audioContext.createBuffer(
+                1,                // 单声道
+                pcmData.length,   // 采样点数量
+                this.sampleRate   // 新的采样率
+            );
+
+            // 将数据写入缓冲区
+            const channelData = this.audioBuffer.getChannelData(0);
+            channelData.set(pcmData);
+
+            // 更新显示信息
+            this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
+            
+            // 更新文件信息中的时长
+            if (this.fileInfo.textContent && this.fileInfo.textContent !== '未选择文件') {
+                const fileInfoParts = this.fileInfo.textContent.split('|');
+                if (fileInfoParts.length >= 3) {
+                    fileInfoParts[2] = ` 时长: ${this.formatTime(this.audioBuffer.duration)}`;
+                    this.fileInfo.textContent = fileInfoParts.join('|');
+                }
+            }
+
+            // 重新绘制波形
+            this.drawWaveform(pcmData);
+
+            // 重置播放按钮状态
+            document.getElementById('playButton').disabled = false;
+            document.getElementById('stopButton').disabled = false;
+            this.resetPlayButton('play');
+
+            console.log('音频缓冲区更新成功');
+
+        } catch (error) {
+            console.error('更新音频缓冲区时出错:', error);
+            alert(`更新音频缓冲区时出错: ${error.message}`);
+            
+            // 重置状态
+            this.audioBuffer = null;
+            document.getElementById('playButton').disabled = true;
+            document.getElementById('stopButton').disabled = true;
+            this.fileInfo.textContent = '音频处理失败';
+            this.durationDisplay.textContent = '00:00';
+        }
     }
 
     handleProgressClick(e) {
@@ -155,31 +225,90 @@ class PCMPlayer {
         const file = event.target.files[0];
         if (!file) return;
 
-        this.currentTime = 0;
-        this.pausedAt = 0;
-        this.resetPlayButton('play');
+        try {
+            this.currentTime = 0;
+            this.pausedAt = 0;
+            this.resetPlayButton('play');
 
-        const arrayBuffer = await file.arrayBuffer();
-        const pcmData = new Float32Array(arrayBuffer.byteLength / 2);
-        const dataView = new DataView(arrayBuffer);
+            // 从文件名检测采样率并更新
+            const detectedSampleRate = this.detectSampleRateFromFileName(file.name);
+            if (detectedSampleRate !== this.sampleRate) {
+                this.sampleRate = detectedSampleRate;
+                // 更新采样率选择器的值
+                const sampleRateSelect = document.getElementById('sampleRateSelect');
+                if (sampleRateSelect) {
+                    // 如果检测到的采样率在选项中存在，就选中它
+                    const option = Array.from(sampleRateSelect.options)
+                        .find(opt => parseInt(opt.value) === detectedSampleRate);
+                    
+                    if (option) {
+                        sampleRateSelect.value = detectedSampleRate;
+                    } else {
+                        console.log(`检测到的采样率 ${detectedSampleRate}Hz 不在预设选项中`);
+                    }
+                }
+            }
 
-        for (let i = 0; i < pcmData.length; i++) {
-            const int16 = dataView.getInt16(i * 2, true);
-            pcmData[i] = int16 / 32768.0;
+            // 存储原始PCM数据
+            this.rawPcmData = await file.arrayBuffer();
+            
+            // 验证文件大小
+            if (this.rawPcmData.byteLength === 0) {
+                throw new Error('PCM 文件为空');
+            }
+            
+            // 验证文件大小是否为偶数（因为每个采样点是 16 位）
+            if (this.rawPcmData.byteLength % 2 !== 0) {
+                throw new Error('无效的 PCM 文件格式：文件大小必须是 2 的倍数');
+            }
+
+            const pcmData = new Float32Array(this.rawPcmData.byteLength / 2);
+            const dataView = new DataView(this.rawPcmData);
+
+            // 将 16 位整数转换为浮点数
+            for (let i = 0; i < pcmData.length; i++) {
+                const int16 = dataView.getInt16(i * 2, true);  // true 表示小端字节序
+                pcmData[i] = int16 / 32768.0;  // 归一化到 [-1, 1] 范围
+            }
+
+            // 验证转换后的数据
+            if (pcmData.length === 0) {
+                throw new Error('PCM 数据转换后长度为 0');
+            }
+
+            // 创建音频缓冲区
+            this.audioBuffer = this.audioContext.createBuffer(
+                1,                // 单声道
+                pcmData.length,   // 采样点数量
+                this.sampleRate   // 采样率
+            );
+            
+            // 将数据写入音频缓冲区
+            this.audioBuffer.getChannelData(0).set(pcmData);
+
+            // 更新 UI
+            document.getElementById('playButton').disabled = false;
+            document.getElementById('stopButton').disabled = false;
+
+            this.fileInfo.textContent = `文件名: ${file.name} | 大小: ${(file.size / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
+            this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
+
+            // 绘制波形
+            this.drawWaveform(pcmData);
+            this.resetPlayButton('play');
+
+        } catch (error) {
+            console.error('处理 PCM 文件时出错:', error);
+            alert(`处理 PCM 文件时出错: ${error.message}`);
+            
+            // 重置状态
+            this.rawPcmData = null;
+            this.audioBuffer = null;
+            document.getElementById('playButton').disabled = true;
+            document.getElementById('stopButton').disabled = true;
+            this.fileInfo.textContent = '文件处理失败';
+            this.durationDisplay.textContent = '00:00';
         }
-
-        this.audioBuffer = this.audioContext.createBuffer(1, pcmData.length, this.sampleRate);
-        this.audioBuffer.getChannelData(0).set(pcmData);
-
-        document.getElementById('playButton').disabled = false;
-        document.getElementById('stopButton').disabled = false;
-
-        this.fileInfo.textContent = `文件名: ${file.name} | 大小: ${(file.size / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
-        this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
-
-        this.drawWaveform(pcmData);
-
-        this.resetPlayButton('play');
     }
 
     drawWaveform(pcmData) {
@@ -211,6 +340,17 @@ class PCMPlayer {
         // 重置波形点数组
         this.waveformPoints = [];
         const centerY = height / 2;
+
+        // 计算音频数据的最大振幅
+        let maxAmplitude = 0;
+        for (let i = 0; i < pcmData.length; i++) {
+            maxAmplitude = Math.max(maxAmplitude, Math.abs(pcmData[i]));
+        }
+
+        // 自动计算放大系数，目标是让波形高度占据画布高度的 70%
+        const targetHeight = height * 0.7;
+        const autoAmplificationFactor = maxAmplitude > 0 ? (targetHeight / 2) / (maxAmplitude * centerY) : 1;
+        this.amplificationFactor = Math.min(Math.max(autoAmplificationFactor, 0.5), 5); // 限制在 0.5-5 倍之间
 
         // 计算并存储波形点
         for (let i = 0; i < width; i++) {
@@ -442,5 +582,31 @@ class PCMPlayer {
 
         this.resetPlayButton('play');
         this.drawCurrentState();
+    }
+
+    // 添加从文件名识别采样率的方法
+    detectSampleRateFromFileName(fileName) {
+        // 常见的采样率数值
+        const commonSampleRates = [8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000];
+        
+        // 尝试从文件名中匹配数字
+        const matches = fileName.match(/[_-]?(\d{4,6})(hz|k)?[_-]?/i);
+        if (matches) {
+            let detectedRate = parseInt(matches[1]);
+            
+            // 如果数字是以k结尾，将其转换为完整的采样率
+            if (matches[2] && matches[2].toLowerCase() === 'k') {
+                detectedRate *= 1000;
+            }
+            
+            // 验证检测到的采样率是否在合理范围内
+            if (commonSampleRates.includes(detectedRate)) {
+                console.log(`从文件名检测到采样率: ${detectedRate}Hz`);
+                return detectedRate;
+            }
+        }
+        
+        console.log('未从文件名检测到有效采样率，使用默认值: 48000Hz');
+        return 48000;
     }
 } 

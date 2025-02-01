@@ -226,6 +226,27 @@
             flex: 1;
             width: 100%;
         }
+
+        .sample-rate-select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background-color: white;
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sample-rate-select:hover {
+            border-color: #2196F3;
+        }
+
+        .sample-rate-select:focus {
+            outline: none;
+            border-color: #2196F3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -269,6 +290,18 @@
                 </svg>
                 停止
             </button>
+        </div>
+
+        <div class="control-group">
+            <label for="sampleRateSelect">采样率:</label>
+            <select id="sampleRateSelect" class="sample-rate-select">
+                <option value="8000">8000 Hz</option>
+                <option value="16000">16000 Hz</option>
+                <option value="22050">22050 Hz</option>
+                <option value="24000" selected>24000 Hz</option>
+                <option value="44100">44100 Hz</option>
+                <option value="48000">48000 Hz</option>
+            </select>
         </div>
 
         <div class="audio-info">
