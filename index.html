@@ -55,8 +55,8 @@
 
         .waveform-header {
             display: flex;
-            flex-direction: column;
-            gap: 5px;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 10px;
             padding: 0 10px;
             color: #666;
@@ -66,11 +66,45 @@
             font-size: 15px;
             font-weight: 500;
             color: #333;
+            margin-right: 4px;
         }
 
         .waveform-header .file-info {
-            font-size: 13px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .file-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            background: #f0f2f5;
+            border-radius: 4px;
+            font-size: 12px;
             color: #666;
+            white-space: nowrap;
+        }
+
+        .file-tag.type {
+            background: #e3f2fd;
+            color: #1976D2;
+        }
+
+        .file-tag.size {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .file-tag.duration {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .file-tag.sample-rate {
+            background: #fff3e0;
+            color: #ef6c00;
         }
 
         #fileNameDisplay.no-file {

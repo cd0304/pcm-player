@@ -92,7 +92,11 @@ class PCMPlayer {
                 document.getElementById('playButton').disabled = false;
                 document.getElementById('stopButton').disabled = false;
 
-                this.fileInfo.textContent = `文件名: test.pcm | 大小: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
+                this.fileInfo.innerHTML = `
+                    <span class="file-tag type">PCM</span>
+                    <span class="file-tag size">${(arrayBuffer.byteLength / 1024).toFixed(2)} KB</span>
+                    <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
+                `;
                 this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
 
                 this.drawWaveform(pcmData);
@@ -174,12 +178,9 @@ class PCMPlayer {
             this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
             
             // 更新文件信息中的时长
-            if (this.fileInfo.textContent && this.fileInfo.textContent !== '未选择文件') {
-                const fileInfoParts = this.fileInfo.textContent.split('|');
-                if (fileInfoParts.length >= 3) {
-                    fileInfoParts[2] = ` 时长: ${this.formatTime(this.audioBuffer.duration)}`;
-                    this.fileInfo.textContent = fileInfoParts.join('|');
-                }
+            const durationTag = this.fileInfo.querySelector('.file-tag.duration');
+            if (durationTag) {
+                durationTag.textContent = this.formatTime(this.audioBuffer.duration);
             }
 
             // 重新绘制波形
@@ -200,7 +201,7 @@ class PCMPlayer {
             this.audioBuffer = null;
             document.getElementById('playButton').disabled = true;
             document.getElementById('stopButton').disabled = true;
-            this.fileInfo.textContent = '音频处理失败';
+            this.fileInfo.innerHTML = '<span class="file-tag">音频处理失败</span>';
             this.durationDisplay.textContent = '00:00';
         }
     }
@@ -265,7 +266,7 @@ class PCMPlayer {
             alert('文件处理失败: ' + error.message);
             this.fileNameDisplay.textContent = '文件处理失败';
             this.fileNameDisplay.classList.add('no-file');
-            this.fileInfo.textContent = '';
+            this.fileInfo.innerHTML = '';
         }
     }
 
@@ -303,7 +304,12 @@ class PCMPlayer {
             document.getElementById('stopButton').disabled = false;
             document.getElementById('convertButton').disabled = true;  // MP3 不需要转换
 
-            this.fileInfo.textContent = `类型: MP3 | 采样率: ${this.sampleRate}Hz | 大小: ${(file.size / 1024).toFixed(2)} KB | 时长: ${this.formatTime(audioBuffer.duration)}`;
+            // 更新文件信息显示
+            this.fileInfo.innerHTML = `
+                <span class="file-tag type">MP3</span>
+                <span class="file-tag size">${(file.size / 1024).toFixed(2)} KB</span>
+                <span class="file-tag duration">${this.formatTime(audioBuffer.duration)}</span>
+            `;
             this.durationDisplay.textContent = this.formatTime(audioBuffer.duration);
 
             // 绘制波形
@@ -367,7 +373,12 @@ class PCMPlayer {
         document.getElementById('stopButton').disabled = false;
         document.getElementById('convertButton').disabled = false;
 
-        this.fileInfo.textContent = `类型: PCM | 采样率: ${this.sampleRate}Hz | 大小: ${(file.size / 1024).toFixed(2)} KB | 时长: ${this.formatTime(this.audioBuffer.duration)}`;
+        // 更新文件信息显示
+        this.fileInfo.innerHTML = `
+            <span class="file-tag type">PCM</span>
+            <span class="file-tag size">${(file.size / 1024).toFixed(2)} KB</span>
+            <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
+        `;
         this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
 
         // 绘制波形
