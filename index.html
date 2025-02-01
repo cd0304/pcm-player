@@ -74,7 +74,9 @@
         }
 
         .custom-file-input {
-            display: inline-block;
+            display: flex;
+            align-items: center;
+            gap: 8px;
             padding: 12px 24px;
             background: #e3f2fd;
             color: #1976d2;
@@ -116,8 +118,12 @@
         .controls {
             display: flex;
             justify-content: center;
+            align-items: center;
             gap: 15px;
             margin-top: 25px;
+            flex-wrap: wrap;
+            position: relative;
+            width: 100%;
         }
 
         button {
@@ -276,14 +282,24 @@
         }
 
         .control-group {
-            margin: 10px 0;
+            margin: 0;
             display: flex;
             align-items: center;
             gap: 10px;
+            border-right: 1px solid #e0e0e0;
+            padding-right: 15px;
+            margin-right: 5px;
+            border-left: none;
+            padding-left: 0;
+            margin-left: 0;
+            order: -1;
         }
 
         .control-group label {
-            min-width: 120px;
+            color: #666;
+            font-size: 15px;
+            font-weight: 500;
+            white-space: nowrap;
         }
 
         .control-group input[type="range"] {
@@ -292,14 +308,15 @@
         }
 
         .sample-rate-select {
-            padding: 8px 12px;
+            padding: 12px;
             border-radius: 6px;
             border: 1px solid #ddd;
             background-color: white;
-            font-size: 14px;
+            font-size: 15px;
             color: #333;
             cursor: pointer;
             transition: all 0.2s;
+            height: 45px;
         }
 
         .sample-rate-select:hover {
@@ -310,6 +327,16 @@
             outline: none;
             border-color: #2196F3;
             box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+
+        /* 社交媒体链接容器样式 */
+        .social-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: transparent;
+            width: 900px;
+            display: flex;
+            justify-content: center;
         }
     </style>
 </head>
@@ -366,20 +393,22 @@
                 </svg>
                 转换为 MP3
             </button>
-        </div>
 
-        <div class="control-group">
-            <label for="sampleRateSelect">采样率:</label>
-            <select id="sampleRateSelect" class="sample-rate-select">
-                <option value="8000">8000 Hz</option>
-                <option value="16000">16000 Hz</option>
-                <option value="22050">22050 Hz</option>
-                <option value="24000" selected>24000 Hz</option>
-                <option value="44100">44100 Hz</option>
-                <option value="48000">48000 Hz</option>
-            </select>
+            <div class="control-group">
+                <label for="sampleRateSelect">采样率:</label>
+                <select id="sampleRateSelect" class="sample-rate-select">
+                    <option value="8000">8000 Hz</option>
+                    <option value="16000">16000 Hz</option>
+                    <option value="22050">22050 Hz</option>
+                    <option value="24000" selected>24000 Hz</option>
+                    <option value="44100">44100 Hz</option>
+                    <option value="48000">48000 Hz</option>
+                </select>
+            </div>
         </div>
+    </div>
 
+    <div class="social-container">
         <div class="social-links">
             <a href="https://github.com/wbxl2000/pcm.qer.im" target="_blank" class="github-link">
                 <svg height="24" viewBox="0 0 16 16" width="24">
