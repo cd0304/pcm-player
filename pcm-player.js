@@ -8,16 +8,26 @@ class PCMPlayer {
             endianness: 'little', // 'little' 或 'big'
         };
         
-        this.isPlaying = false;
-        this.audioBuffer = null;
-        this.source = null;
-        this.startTime = 0;
-        this.currentTime = 0;
-        this.pausedAt = 0;
-        this.amplificationFactor = 1;
-        this.rawPcmData = null;  // 存储原始PCM数据
-        this.mp3Audio = null;    // 存储 MP3 Audio 对象
-        this.isMP3 = false;      // 标记当前是否是 MP3 文件
+        // 播放器状态
+        this.playerState = {
+            isPlaying: false,
+            currentTime: 0,
+            pausedAt: 0,
+            startTime: 0,
+            amplificationFactor: 1
+        };
+
+        // 音频数据
+        this.audioData = {
+            audioBuffer: null,
+            source: null,
+            rawPcmData: null,
+            mp3Audio: null,
+            isMP3: false,
+            mediaElement: null,
+            mp3Data: null
+        };
+
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         this.analyser = this.audioContext.createAnalyser();
         this.analyser.fftSize = 2048;
@@ -30,6 +40,7 @@ class PCMPlayer {
         this.setupSampleButton();
         this.setupAudioControls();
         this.setupConvertButton();
+        this.setupWavConvertButton();
         
         // 初始化文件名显示样式
         this.fileNameDisplay.classList.add('no-file');
@@ -82,7 +93,7 @@ class PCMPlayer {
                 const arrayBuffer = await response.arrayBuffer();
 
                 // 存储原始 PCM 数据
-                this.rawPcmData = arrayBuffer;
+                this.audioData.rawPcmData = arrayBuffer;
 
                 if (!this.audioContext) {
                     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -104,6 +115,7 @@ class PCMPlayer {
 
                 // 启用转换按钮
                 document.getElementById('convertButton').disabled = false;
+                document.getElementById('convertWavButton').disabled = false;
             } catch (error) {
                 console.error('加载样例文件失败:', error);
                 alert('加载样例文件失败，请确保 test.pcm 文件存在');
@@ -117,7 +129,7 @@ class PCMPlayer {
         sampleRateSelect.value = this.config.sampleRate;
         sampleRateSelect.addEventListener('change', (e) => {
             this.config.sampleRate = parseInt(e.target.value);
-            if (this.rawPcmData) {
+            if (this.audioData.rawPcmData) {
                 this.updateAudioBuffer();
             }
         });
@@ -126,7 +138,7 @@ class PCMPlayer {
         const bitDepthSelect = document.getElementById('bitDepthSelect');
         bitDepthSelect.addEventListener('change', (e) => {
             this.config.bitDepth = parseInt(e.target.value);
-            if (this.rawPcmData) {
+            if (this.audioData.rawPcmData) {
                 this.updateAudioBuffer();
             }
         });
@@ -135,7 +147,7 @@ class PCMPlayer {
         const channelsSelect = document.getElementById('channelsSelect');
         channelsSelect.addEventListener('change', (e) => {
             this.config.channels = parseInt(e.target.value);
-            if (this.rawPcmData) {
+            if (this.audioData.rawPcmData) {
                 this.updateAudioBuffer();
             }
         });
@@ -144,7 +156,7 @@ class PCMPlayer {
         const endiannessSelect = document.getElementById('endiannessSelect');
         endiannessSelect.addEventListener('change', (e) => {
             this.config.endianness = e.target.value;
-            if (this.rawPcmData) {
+            if (this.audioData.rawPcmData) {
                 this.updateAudioBuffer();
             }
         });
@@ -157,30 +169,37 @@ class PCMPlayer {
         }
     }
 
+    setupWavConvertButton() {
+        const convertWavButton = document.getElementById('convertWavButton');
+        if (convertWavButton) {
+            convertWavButton.addEventListener('click', () => this.convertToWav());
+        }
+    }
+
     updateAudioBuffer() {
-        if (!this.rawPcmData || !this.audioContext) {
+        if (!this.audioData.rawPcmData || !this.audioContext) {
             console.warn('没有 PCM 数据或音频上下文');
             return;
         }
 
         try {
             // 停止当前播放
-            if (this.isPlaying) {
+            if (this.playerState.isPlaying) {
                 this.stop();
             }
 
             // 重置播放进度
-            this.currentTime = 0;
-            this.pausedAt = 0;
+            this.playerState.currentTime = 0;
+            this.playerState.pausedAt = 0;
             this.currentTimeDisplay.textContent = this.formatTime(0);
 
             // 计算每个采样点占用的字节数
             const bytesPerSample = this.config.bitDepth / 8;
-            const totalSamples = Math.floor(this.rawPcmData.byteLength / (bytesPerSample * this.config.channels));
+            const totalSamples = Math.floor(this.audioData.rawPcmData.byteLength / (bytesPerSample * this.config.channels));
             
             // 创建多声道数据数组
             const channelData = Array(this.config.channels).fill().map(() => new Float32Array(totalSamples));
-            const dataView = new DataView(this.rawPcmData);
+            const dataView = new DataView(this.audioData.rawPcmData);
 
             // 检测系统字节序并设置
             this.config.endianness = this.detectEndianness();
@@ -233,7 +252,7 @@ class PCMPlayer {
             }
 
             // 创建新的音频缓冲区
-            this.audioBuffer = this.audioContext.createBuffer(
+            this.audioData.audioBuffer = this.audioContext.createBuffer(
                 this.config.channels,
                 totalSamples,
                 this.config.sampleRate
@@ -241,11 +260,11 @@ class PCMPlayer {
 
             // 将数据写入缓冲区
             for (let channel = 0; channel < this.config.channels; channel++) {
-                this.audioBuffer.copyToChannel(channelData[channel], channel);
+                this.audioData.audioBuffer.copyToChannel(channelData[channel], channel);
             }
 
             // 更新显示信息
-            this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
+            this.durationDisplay.textContent = this.formatTime(this.audioData.audioBuffer.duration);
             
             // 更新文件信息
             this.updateFileInfo();
@@ -265,7 +284,7 @@ class PCMPlayer {
             alert(`更新音频缓冲区时出错: ${error.message}`);
             
             // 重置状态
-            this.audioBuffer = null;
+            this.audioData.audioBuffer = null;
             document.getElementById('playButton').disabled = true;
             document.getElementById('stopButton').disabled = true;
             this.fileInfo.innerHTML = '<span class="file-tag">音频处理失败</span>';
@@ -276,8 +295,8 @@ class PCMPlayer {
     updateFileInfo() {
         this.fileInfo.innerHTML = `
             <span class="file-tag type">PCM</span>
-            <span class="file-tag size">${(this.rawPcmData.byteLength / 1024).toFixed(2)} KB</span>
-            <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
+            <span class="file-tag size">${(this.audioData.rawPcmData.byteLength / 1024).toFixed(2)} KB</span>
+            <span class="file-tag duration">${this.formatTime(this.audioData.audioBuffer.duration)}</span>
             <span class="file-tag sample-rate">${this.config.sampleRate}Hz</span>
             <span class="file-tag channels">${this.config.channels}ch</span>
             <span class="file-tag bit-depth">${this.config.bitDepth}bit</span>
@@ -285,7 +304,7 @@ class PCMPlayer {
     }
 
     handleProgressClick(e) {
-        if (!this.audioBuffer || !this.waveformPoints.length) return;
+        if (!this.audioData.audioBuffer || !this.waveformPoints.length) return;
 
         // 获取点击位置相对于画布的坐标
         const rect = this.canvas.getBoundingClientRect();
@@ -298,13 +317,13 @@ class PCMPlayer {
         });
 
         // 使用波形点对应的时间位置
-        const seekTime = Math.min(clickedPoint.timePosition, this.audioBuffer.duration);
+        const seekTime = Math.min(clickedPoint.timePosition, this.audioData.audioBuffer.duration);
 
-        if (this.isPlaying) {
+        if (this.playerState.isPlaying) {
             this.pause();
         }
-        this.currentTime = seekTime;
-        this.pausedAt = seekTime;
+        this.playerState.currentTime = seekTime;
+        this.playerState.pausedAt = seekTime;
         this.currentTimeDisplay.textContent = this.formatTime(seekTime);
         this.drawCurrentState();
     }
@@ -316,36 +335,30 @@ class PCMPlayer {
     }
 
     async handleFileSelect(event) {
-        if (this.isPlaying) {
-            this.stop();
-        }
-
         const file = event.target.files[0];
         if (!file) return;
 
-        try {
-            this.currentTime = 0;
-            this.pausedAt = 0;
-            this.resetPlayButton('play');
+        // 停止当前播放
+        this.stop();
 
-            // 更新文件名显示
-            this.fileNameDisplay.textContent = file.name;
-            this.fileNameDisplay.classList.remove('no-file');
+        // 更新文件名显示
+        this.fileNameDisplay.textContent = file.name;
+        this.fileNameDisplay.classList.remove('no-file');
 
-            if (file.name.toLowerCase().endsWith('.mp3')) {
-                // 处理 MP3 文件
-                await this.handleMP3File(file);
-            } else {
-                // PCM 文件处理逻辑
-                await this.handlePCMFile(file);
-            }
-        } catch (error) {
-            console.error('文件处理失败:', error);
-            alert('文件处理失败: ' + error.message);
-            this.fileNameDisplay.textContent = '文件处理失败';
-            this.fileNameDisplay.classList.add('no-file');
-            this.fileInfo.innerHTML = '';
+        // 根据文件类型处理
+        if (file.name.toLowerCase().endsWith('.mp3')) {
+            await this.handleMP3File(file);
+            // MP3 文件不支持转换为 WAV
+            document.getElementById('convertWavButton').disabled = true;
+        } else {
+            await this.handlePCMFile(file);
+            // PCM 文件支持转换为 WAV
+            document.getElementById('convertWavButton').disabled = false;
         }
+
+        // 启用播放和停止按钮
+        this.playButton.disabled = false;
+        this.stopButton.disabled = false;
     }
 
     async handleMP3File(file) {
@@ -375,7 +388,7 @@ class PCMPlayer {
             }
 
             // 存储音频缓冲区
-            this.audioBuffer = audioBuffer;
+            this.audioData.audioBuffer = audioBuffer;
 
             // 更新 UI
             document.getElementById('playButton').disabled = false;
@@ -400,66 +413,23 @@ class PCMPlayer {
     }
 
     async handlePCMFile(file) {
-        // 从文件名检测采样率并更新
         const detectedSampleRate = this.detectSampleRateFromFileName(file.name);
         if (detectedSampleRate !== this.config.sampleRate) {
-            this.config.sampleRate = detectedSampleRate;
+            this.updateConfig({ sampleRate: detectedSampleRate });
             const sampleRateSelect = document.getElementById('sampleRateSelect');
             if (sampleRateSelect) {
-                const option = Array.from(sampleRateSelect.options)
-                    .find(opt => parseInt(opt.value) === detectedSampleRate);
-                if (option) {
-                    sampleRateSelect.value = detectedSampleRate;
-                }
+                sampleRateSelect.value = detectedSampleRate.toString();
             }
         }
 
-        // 存储原始PCM数据
-        this.rawPcmData = await file.arrayBuffer();
-        
-        // 验证文件
-        if (this.rawPcmData.byteLength === 0) {
-            throw new Error('PCM 文件为空');
-        }
-        if (this.rawPcmData.byteLength % 2 !== 0) {
-            throw new Error('无效的 PCM 文件格式：文件大小必须是 2 的倍数');
-        }
+        this.audioData.rawPcmData = await file.arrayBuffer();
+        this.validatePCMFile(this.audioData.rawPcmData);
 
-        // 转换数据
-        const pcmData = new Float32Array(this.rawPcmData.byteLength / 2);
-        const dataView = new DataView(this.rawPcmData);
+        const pcmData = this.processAudioData(new Int16Array(this.audioData.rawPcmData));
+        this.createAudioBuffer(pcmData);
 
-        for (let i = 0; i < pcmData.length; i++) {
-            const int16 = dataView.getInt16(i * 2, true);
-            pcmData[i] = int16 / 32768.0;
-        }
-
-        if (pcmData.length === 0) {
-            throw new Error('PCM 数据转换后长度为 0');
-        }
-
-        // 创建音频缓冲区
-        this.audioBuffer = this.audioContext.createBuffer(
-            1,
-            pcmData.length,
-            this.config.sampleRate
-        );
-        this.audioBuffer.getChannelData(0).set(pcmData);
-
-        // 更新 UI
-        document.getElementById('playButton').disabled = false;
-        document.getElementById('stopButton').disabled = false;
-        document.getElementById('convertButton').disabled = false;
-
-        // 更新文件信息显示
-        this.fileInfo.innerHTML = `
-            <span class="file-tag type">PCM</span>
-            <span class="file-tag size">${(file.size / 1024).toFixed(2)} KB</span>
-            <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
-        `;
-        this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
-
-        // 绘制波形
+        this.updateAllButtonsState('enabled');
+        this.updateDisplayInfo('PCM', file.size, this.audioData.audioBuffer.duration);
         this.drawWaveform(pcmData);
         this.resetPlayButton('play');
     }
@@ -478,23 +448,23 @@ class PCMPlayer {
 
         // 设置定时器更新进度
         const updateProgress = () => {
-            if (!this.isMP3 || !this.mp3Audio) return;
+            if (!this.audioData.isMP3 || !this.audioData.mp3Audio) return;
             
             // 更新当前时间显示
-            this.currentTime = this.mp3Audio.currentTime;
-            this.currentTimeDisplay.textContent = this.formatTime(this.currentTime);
+            this.playerState.currentTime = this.audioData.mp3Audio.currentTime;
+            this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
 
             // 更新波形进度
             this.drawCurrentState();
 
             // 继续更新
-            if (this.isPlaying) {
+            if (this.playerState.isPlaying) {
                 requestAnimationFrame(updateProgress);
             }
         };
 
         // 开始更新进度
-        if (this.isPlaying) {
+        if (this.playerState.isPlaying) {
             updateProgress();
         }
     }
@@ -506,24 +476,7 @@ class PCMPlayer {
         const step = Math.ceil(pcmData.length / width);
 
         ctx.clearRect(0, 0, width, height);
-
-        // 绘制网格
-        ctx.strokeStyle = '#f0f0f0';
-        ctx.lineWidth = 1;
-
-        for (let i = 0; i < height; i += 40) {
-            ctx.beginPath();
-            ctx.moveTo(0, i);
-            ctx.lineTo(width, i);
-            ctx.stroke();
-        }
-
-        for (let i = 0; i < width; i += 100) {
-            ctx.beginPath();
-            ctx.moveTo(i, 0);
-            ctx.lineTo(i, height);
-            ctx.stroke();
-        }
+        this.drawGrid(ctx, width, height);
 
         // 重置波形点数组
         this.waveformPoints = [];
@@ -535,39 +488,41 @@ class PCMPlayer {
             maxAmplitude = Math.max(maxAmplitude, Math.abs(pcmData[i]));
         }
 
-        // 自动计算放大系数，目标是让波形高度占据画布高度的 70%
+        // 自动计算放大系数
         const targetHeight = height * 0.7;
         const autoAmplificationFactor = maxAmplitude > 0 ? (targetHeight / 2) / (maxAmplitude * centerY) : 1;
-        this.amplificationFactor = Math.min(Math.max(autoAmplificationFactor, 0.5), 5); // 限制在 0.5-5 倍之间
+        this.playerState.amplificationFactor = Math.min(Math.max(autoAmplificationFactor, 0.5), 5);
 
-        // 计算并存储波形点
+        // 计算波形点
+        this.calculateWaveformPoints(pcmData, width, height, step, centerY);
+
+        // 绘制波形
+        this.drawCurrentState();
+    }
+
+    calculateWaveformPoints(pcmData, width, height, step, centerY) {
         for (let i = 0; i < width; i++) {
             const startIndex = i * step;
             let sum = 0;
             let count = 0;
 
-            // 计算每个像素位置对应的音频采样点的平均值
             for (let j = 0; j < step && startIndex + j < pcmData.length; j++) {
                 sum += Math.abs(pcmData[startIndex + j]);
                 count++;
             }
 
             const average = sum / count;
-            const amplitude = average * centerY * 0.95 * this.amplificationFactor;
+            const amplitude = average * centerY * 0.95 * this.playerState.amplificationFactor;
 
-            // 存储波形点信息，包括位置、对应的音频时间和振幅
             this.waveformPoints.push({
                 x: i,
                 y: Math.min(centerY + amplitude, height),
                 bottomY: Math.max(centerY - amplitude, 0),
-                timePosition: this.isMP3 ? 
-                    (i / width) * this.mp3Audio.duration : 
-                    (startIndex / pcmData.length) * this.audioBuffer.duration
+                timePosition: this.audioData.isMP3 ? 
+                    (i / width) * this.audioData.mp3Audio.duration : 
+                    (startIndex / pcmData.length) * this.audioData.audioBuffer.duration
             });
         }
-
-        // 绘制波形
-        this.drawCurrentState();
     }
 
     drawCurrentState() {
@@ -578,76 +533,71 @@ class PCMPlayer {
         const height = this.canvas.height;
 
         ctx.clearRect(0, 0, width, height);
-
-        // 绘制网格
-        ctx.strokeStyle = '#f0f0f0';
-        ctx.lineWidth = 1;
-
-        for (let i = 0; i < height; i += 40) {
-            ctx.beginPath();
-            ctx.moveTo(0, i);
-            ctx.lineTo(width, i);
-            ctx.stroke();
-        }
-
-        for (let i = 0; i < width; i += 100) {
-            ctx.beginPath();
-            ctx.moveTo(i, 0);
-            ctx.lineTo(i, height);
-            ctx.stroke();
-        }
+        this.drawGrid(ctx, width, height);
 
         // 计算当前播放时间
-        const currentTime = this.isMP3 ? 
-            this.mp3Audio.currentTime : 
-            (this.isPlaying ? this.pausedAt + (this.audioContext.currentTime - this.startTime) : this.pausedAt);
+        const currentTime = this.audioData.isMP3 ? 
+            this.audioData.mp3Audio.currentTime : 
+            (this.playerState.isPlaying ? 
+                this.playerState.pausedAt + (this.audioContext.currentTime - this.playerState.startTime) : 
+                this.playerState.pausedAt);
 
         // 绘制波形
+        this.drawWaveformPath(ctx);
+
+        // 绘制播放进度
+        this.drawPlaybackProgress(ctx, width, height, currentTime);
+    }
+
+    drawWaveformPath(ctx) {
         ctx.beginPath();
         ctx.strokeStyle = '#2196F3';
         ctx.lineWidth = 2;
 
-        for (let i = 0; i < this.waveformPoints.length; i++) {
-            const point = this.waveformPoints[i];
+        this.waveformPoints.forEach((point, i) => {
             if (i === 0) {
                 ctx.moveTo(point.x, point.y);
             } else {
                 ctx.lineTo(point.x, point.y);
             }
-        }
+        });
         ctx.stroke();
+    }
 
-        // 绘制播放进度线
-        if (this.isMP3 ? this.mp3Audio : this.audioBuffer) {
-            const duration = this.isMP3 ? this.mp3Audio.duration : this.audioBuffer.duration;
-            const progress = currentTime / duration;
-            const progressX = width * progress;
+    drawPlaybackProgress(ctx, width, height, currentTime) {
+        const audioSource = this.audioData.isMP3 ? this.audioData.mp3Audio : this.audioData.audioBuffer;
+        if (!audioSource) return;
 
-            ctx.beginPath();
-            ctx.strokeStyle = '#1976D2';
-            ctx.lineWidth = 2;
-            ctx.moveTo(progressX, 0);
-            ctx.lineTo(progressX, height);
-            ctx.stroke();
-        }
+        const duration = this.audioData.isMP3 ? 
+            this.audioData.mp3Audio.duration : 
+            this.audioData.audioBuffer.duration;
+        const progress = currentTime / duration;
+        const progressX = width * progress;
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#1976D2';
+        ctx.lineWidth = 2;
+        ctx.moveTo(progressX, 0);
+        ctx.lineTo(progressX, height);
+        ctx.stroke();
     }
 
     updateProgress() {
-        if (!this.isPlaying || !this.audioBuffer) return;
+        if (!this.playerState.isPlaying || !this.audioData.audioBuffer) return;
 
         // 计算当前播放时间
-        const playedTime = this.audioContext.currentTime - this.startTime;
-        const currentTime = this.pausedAt + playedTime;
+        const playedTime = this.audioContext.currentTime - this.playerState.startTime;
+        const currentTime = this.playerState.pausedAt + playedTime;
 
         // 确保不超过总时长
-        this.currentTime = Math.min(currentTime, this.audioBuffer.duration);
+        this.playerState.currentTime = Math.min(currentTime, this.audioData.audioBuffer.duration);
 
         // 更新显示
-        this.currentTimeDisplay.textContent = this.formatTime(this.currentTime);
+        this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
         this.drawCurrentState();
 
         // 检查是否需要继续更新
-        if (this.currentTime < this.audioBuffer.duration) {
+        if (this.playerState.currentTime < this.audioData.audioBuffer.duration) {
             requestAnimationFrame(() => this.updateProgress());
         } else {
             this.stop();
@@ -655,26 +605,27 @@ class PCMPlayer {
     }
 
     togglePlay() {
-        if (this.isMP3) {
-            if (!this.isPlaying) {
-                this.mp3Audio.currentTime = this.pausedAt;
-                this.mp3Audio.play();
-                this.isPlaying = true;
+        if (this.audioData.isMP3) {
+            if (!this.playerState.isPlaying) {
+                this.audioData.mp3Audio.currentTime = this.playerState.pausedAt;
+                this.audioData.mp3Audio.play();
+                this.updatePlayerState({ isPlaying: true });
                 this.resetPlayButton('pause');
                 
                 // 更新进度
                 this.updateProgressInterval = setInterval(() => {
-                    this.currentTime = this.mp3Audio.currentTime;
-                    this.currentTimeDisplay.textContent = this.formatTime(this.currentTime);
+                    this.updatePlayerState({ 
+                        currentTime: this.audioData.mp3Audio.currentTime 
+                    });
+                    this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
                     this.drawCurrentState();
                 }, 100);
             } else {
                 this.pause();
             }
         } else {
-            // 原有的 PCM 播放逻辑
-            if (!this.isPlaying) {
-                this.play(this.pausedAt);
+            if (!this.playerState.isPlaying) {
+                this.play(this.playerState.pausedAt);
             } else {
                 this.pause();
             }
@@ -682,52 +633,55 @@ class PCMPlayer {
     }
 
     pause() {
-        if (this.isMP3) {
-            if (this.mp3Audio) {
-                this.mp3Audio.pause();
-                this.pausedAt = this.mp3Audio.currentTime;
+        if (this.audioData.isMP3) {
+            if (this.audioData.mp3Audio) {
+                this.audioData.mp3Audio.pause();
+                this.updatePlayerState({ 
+                    pausedAt: this.audioData.mp3Audio.currentTime 
+                });
                 clearInterval(this.updateProgressInterval);
             }
         } else {
-            // 原有的 PCM 暂停逻辑
-            if (this.source) {
-                this.source.stop();
-                this.source = null;
+            if (this.audioData.source) {
+                this.audioData.source.stop();
+                this.updateAudioData({ source: null });
             }
-            this.pausedAt = this.currentTime;
+            this.updatePlayerState({ 
+                pausedAt: this.playerState.currentTime 
+            });
         }
         
-        this.isPlaying = false;
+        this.updatePlayerState({ isPlaying: false });
         this.resetPlayButton('play');
     }
 
     play(startTime = null) {
-        if (this.isPlaying || !this.audioBuffer) return;
+        if (this.playerState.isPlaying || !this.audioData.audioBuffer) return;
 
-        this.source = this.audioContext.createBufferSource();
-        this.source.buffer = this.audioBuffer;
-        this.source.connect(this.audioContext.destination);
+        this.audioData.source = this.audioContext.createBufferSource();
+        this.audioData.source.buffer = this.audioData.audioBuffer;
+        this.audioData.source.connect(this.audioContext.destination);
 
         // 确定开始播放的时间位置
-        const actualStartTime = startTime !== null ? startTime : this.pausedAt;
+        const actualStartTime = startTime !== null ? startTime : this.playerState.pausedAt;
 
         // 从指定位置开始播放
-        this.source.start(0, actualStartTime);
-        this.startTime = this.audioContext.currentTime;
-        this.pausedAt = actualStartTime; // 保存实际的开始位置
-        this.isPlaying = true;
+        this.audioData.source.start(0, actualStartTime);
+        this.playerState.startTime = this.audioContext.currentTime;
+        this.playerState.pausedAt = actualStartTime; // 保存实际的开始位置
+        this.playerState.isPlaying = true;
 
         // 立即更新显示
-        this.currentTime = actualStartTime;
-        this.currentTimeDisplay.textContent = this.formatTime(this.currentTime);
+        this.playerState.currentTime = actualStartTime;
+        this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
         this.drawCurrentState();
 
         this.resetPlayButton('pause');
         this.updateProgress();
 
         // 处理播放结束事件
-        this.source.onended = () => {
-            if (!this.isPlaying) return; // 如果是手动停止，不处理
+        this.audioData.source.onended = () => {
+            if (!this.playerState.isPlaying) return; // 如果是手动停止，不处理
             this.stop();
         };
     }
@@ -762,23 +716,25 @@ class PCMPlayer {
     }
 
     stop() {
-        if (this.isMP3) {
-            if (this.mp3Audio) {
-                this.mp3Audio.pause();
-                this.mp3Audio.currentTime = 0;
+        if (this.audioData.isMP3) {
+            if (this.audioData.mp3Audio) {
+                this.audioData.mp3Audio.pause();
+                this.audioData.mp3Audio.currentTime = 0;
                 clearInterval(this.updateProgressInterval);
             }
         } else {
-            // 原有的 PCM 停止逻辑
-            if (this.source) {
-                this.source.stop();
-                this.source = null;
+            if (this.audioData.source) {
+                this.audioData.source.stop();
+                this.updateAudioData({ source: null });
             }
         }
         
-        this.isPlaying = false;
-        this.currentTime = 0;
-        this.pausedAt = 0;
+        this.updatePlayerState({
+            isPlaying: false,
+            currentTime: 0,
+            pausedAt: 0
+        });
+        
         this.currentTimeDisplay.textContent = this.formatTime(0);
         this.resetPlayButton('play');
         this.drawCurrentState();
@@ -862,35 +818,85 @@ class PCMPlayer {
         }
     }
 
+    // 新增工具方法
+    updateButtonState(button, state, content) {
+        button.disabled = state === 'loading' || state === 'disabled';
+        button.classList.toggle('loading', state === 'loading');
+        
+        if (content) {
+            button.innerHTML = content;
+        } else {
+            switch (state) {
+                case 'loading':
+                    button.innerHTML = `
+                        <div class="loading-spinner"></div>
+                        转换中...
+                    `;
+                    break;
+                case 'success':
+                    button.innerHTML = `
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+                        </svg>
+                        已完成
+                    `;
+                    break;
+            }
+        }
+    }
+
+    getOutputFileName(originalName, newExtension) {
+        return originalName.replace(/\.[^/.]+$/, '') + '.' + newExtension;
+    }
+
+    async handleConvertButton(button, convertFunction, newExtension) {
+        const originalContent = button.innerHTML;
+
+        try {
+            this.updateButtonState(button, 'loading');
+            
+            // 获取输出文件名
+            const outputFileName = this.getOutputFileName(this.fileNameDisplay.textContent, newExtension);
+            
+            // 执行转换
+            const url = await convertFunction(outputFileName);
+            
+            // 创建下载链接
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = outputFileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 显示成功状态
+            this.updateButtonState(button, 'success');
+
+            // 延迟后恢复按钮状态
+            setTimeout(() => {
+                this.updateButtonState(button, 'normal', originalContent);
+                URL.revokeObjectURL(url);
+            }, 2000);
+
+        } catch (error) {
+            console.error(`${newExtension.toUpperCase()} 转换失败:`, error);
+            alert(`${newExtension.toUpperCase()} 转换失败: ${error.message}`);
+            
+            // 恢复按钮状态
+            this.updateButtonState(button, 'normal', originalContent);
+        }
+    }
+
     async convertToMp3() {
-        if (!this.rawPcmData) {
+        if (!this.audioData.rawPcmData) {
             alert('请先加载 PCM 文件');
             return;
         }
 
         const convertButton = document.getElementById('convertButton');
-        const originalContent = convertButton.innerHTML;
-
-        try {
-            // 设置 loading 状态
-            convertButton.classList.add('loading');
-            convertButton.disabled = true;
-            convertButton.innerHTML = `
-                <div class="loading-spinner"></div>
-                转换中...
-            `;
-
-            // 获取源文件名
-            const fileInfoText = this.fileInfo.textContent;
-            let outputFileName = 'converted.mp3';
-            if (fileInfoText && fileInfoText !== '未选择文件') {
-                const match = fileInfoText.match(/文件名:\s*([^|]+)/);
-                if (match && match[1]) {
-                    // 移除原扩展名并添加 .mp3
-                    outputFileName = match[1].trim().replace(/\.[^/.]+$/, '') + '.mp3';
-                }
-            }
-
+        
+        await this.handleConvertButton(convertButton, async (outputFileName) => {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
             document.head.appendChild(script);
@@ -901,10 +907,9 @@ class PCMPlayer {
             });
 
             const mp3encoder = new lamejs.Mp3Encoder(1, this.config.sampleRate, 128);
-            const samples = new Int16Array(this.rawPcmData);
+            const samples = new Int16Array(this.audioData.rawPcmData);
             const mp3Data = [];
 
-            // 每次处理 1152 个采样点（这是 MP3 编码器的推荐值）
             const blockSize = 1152;
             for (let i = 0; i < samples.length; i += blockSize) {
                 const sampleChunk = samples.slice(i, i + blockSize);
@@ -914,49 +919,66 @@ class PCMPlayer {
                 }
             }
 
-            // 完成编码
             const end = mp3encoder.flush();
             if (end.length > 0) {
                 mp3Data.push(end);
             }
 
-            // 合并所有的 MP3 数据
             const blob = new Blob(mp3Data, { type: 'audio/mp3' });
+            return URL.createObjectURL(blob);
+        }, 'mp3');
+    }
 
-            // 创建下载链接
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = outputFileName;
+    async convertToWav() {
+        if (!this.audioData.rawPcmData && !this.audioData.audioBuffer) {
+            console.warn('没有可用的音频数据');
+            return;
+        }
 
-            // 触发下载
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+        const convertWavButton = document.getElementById('convertWavButton');
+        
+        await this.handleConvertButton(convertWavButton, async (outputFileName) => {
+            const wavHeader = this.createWavHeader(
+                this.audioData.audioBuffer.length * this.config.channels * (this.config.bitDepth / 8),
+                this.config.channels,
+                this.config.sampleRate,
+                this.config.bitDepth
+            );
 
-            // 短暂显示完成状态
-            convertButton.classList.remove('loading');
-            convertButton.innerHTML = `
-                <svg class="icon" viewBox="0 0 24 24">
-                    <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
-                </svg>
-                已完成
-            `;
+            const wavBlob = new Blob([wavHeader, this.audioData.rawPcmData], { type: 'audio/wav' });
+            return URL.createObjectURL(wavBlob);
+        }, 'wav');
+    }
 
-            // 延迟后恢复按钮状态
-            setTimeout(() => {
-                convertButton.disabled = false;
-                convertButton.innerHTML = originalContent;
-                URL.revokeObjectURL(url);
-            }, 2000);
+    createWavHeader(dataLength, channels, sampleRate, bitDepth) {
+        const buffer = new ArrayBuffer(44);
+        const view = new DataView(buffer);
 
-        } catch (error) {
-            console.error('MP3 转换失败:', error);
-            alert('MP3 转换失败: ' + error.message);
-            // 恢复按钮状态
-            convertButton.classList.remove('loading');
-            convertButton.disabled = false;
-            convertButton.innerHTML = originalContent;
+        // RIFF chunk descriptor
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(view, 8, 'WAVE');
+
+        // fmt sub-chunk
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true); // fmt chunk size
+        view.setUint16(20, 1, true); // audio format (1 for PCM)
+        view.setUint16(22, channels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * channels * (bitDepth / 8), true); // byte rate
+        view.setUint16(32, channels * (bitDepth / 8), true); // block align
+        view.setUint16(34, bitDepth, true);
+
+        // data sub-chunk
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataLength, true);
+
+        return buffer;
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
         }
     }
 
@@ -968,5 +990,112 @@ class PCMPlayer {
         
         console.log(`系统字节序检测结果: ${systemEndianness === 'little' ? '小端序' : '大端序'}`);
         return systemEndianness;
+    }
+
+    // 新增方法：更新播放器状态
+    updatePlayerState(updates) {
+        Object.assign(this.playerState, updates);
+    }
+
+    // 新增方法：更新音频数据
+    updateAudioData(updates) {
+        Object.assign(this.audioData, updates);
+    }
+
+    // 新增方法：更新音频配置
+    updateConfig(updates) {
+        Object.assign(this.config, updates);
+    }
+
+    // 新增方法：统一管理按钮状态
+    updateAllButtonsState(state) {
+        const buttons = {
+            play: document.getElementById('playButton'),
+            stop: document.getElementById('stopButton'),
+            convert: document.getElementById('convertButton'),
+            convertWav: document.getElementById('convertWavButton')
+        };
+
+        for (const [key, button] of Object.entries(buttons)) {
+            if (button) {
+                button.disabled = state === 'disabled';
+            }
+        }
+    }
+
+    // 新增：绘制网格的通用方法
+    drawGrid(ctx, width, height) {
+        ctx.strokeStyle = '#f0f0f0';
+        ctx.lineWidth = 1;
+
+        // 绘制水平线
+        for (let i = 0; i < height; i += 40) {
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(width, i);
+            ctx.stroke();
+        }
+
+        // 绘制垂直线
+        for (let i = 0; i < width; i += 100) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, height);
+            ctx.stroke();
+        }
+    }
+
+    // 新增：更新音频显示信息的通用方法
+    updateDisplayInfo(type, size, duration, additionalInfo = {}) {
+        let infoHTML = `
+            <span class="file-tag type">${type}</span>
+            <span class="file-tag size">${(size / 1024).toFixed(2)} KB</span>
+            <span class="file-tag duration">${this.formatTime(duration)}</span>
+        `;
+
+        if (type === 'PCM') {
+            infoHTML += `
+                <span class="file-tag sample-rate">${this.config.sampleRate}Hz</span>
+                <span class="file-tag channels">${this.config.channels}ch</span>
+                <span class="file-tag bit-depth">${this.config.bitDepth}bit</span>
+            `;
+        }
+
+        this.fileInfo.innerHTML = infoHTML;
+        this.durationDisplay.textContent = this.formatTime(duration);
+    }
+
+    // 新增：通用的音频数据处理方法
+    processAudioData(data, normalize = true) {
+        if (!data) return null;
+        
+        const processedData = new Float32Array(data.length);
+        const maxValue = normalize ? 32768.0 : 1.0;
+
+        for (let i = 0; i < data.length; i++) {
+            processedData[i] = normalize ? data[i] / maxValue : data[i];
+        }
+
+        return processedData;
+    }
+
+    // 新增：创建音频缓冲区的方法
+    createAudioBuffer(pcmData) {
+        this.audioData.audioBuffer = this.audioContext.createBuffer(
+            1,
+            pcmData.length,
+            this.config.sampleRate
+        );
+        this.audioData.audioBuffer.getChannelData(0).set(pcmData);
+    }
+
+    // 新增：验证PCM文件的方法
+    validatePCMFile(data) {
+        if (data.byteLength === 0) {
+            throw new Error('PCM 文件为空');
+        }
+        if (data.byteLength % 2 !== 0) {
+            throw new Error('无效的 PCM 文件格式：文件大小必须是 2 的倍数');
+        }
     }
 } 

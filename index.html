@@ -279,6 +279,34 @@
             }
         }
 
+        #convertWavButton {
+            background: #f8f9fa;
+            color: #2196F3;
+            border: 1px solid #2196F3;
+        }
+
+        #convertWavButton:hover:not(:disabled) {
+            background: #E3F2FD;
+        }
+
+        #convertWavButton.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        #convertWavButton.loading .loading-spinner {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid #2196F3;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
         .audio-info {
             margin-top: 20px;
             padding: 15px;
@@ -470,6 +498,12 @@
                     </svg>
                     转换为 MP3
                 </button>
+                <button id="convertWavButton" disabled>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                    转换为 WAV
+                </button>
             </div>
 
             <div class="params-group">
@@ -582,5 +616,4 @@
         });
     </script>
 </body>
-</html> 
 </html> 
