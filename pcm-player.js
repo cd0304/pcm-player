@@ -346,14 +346,22 @@ class PCMPlayer {
         this.fileNameDisplay.classList.remove('no-file');
 
         // 根据文件类型处理
-        if (file.name.toLowerCase().endsWith('.mp3')) {
-            await this.handleMP3File(file);
-            // MP3 文件不支持转换为 WAV
-            document.getElementById('convertWavButton').disabled = true;
-        } else {
-            await this.handlePCMFile(file);
-            // PCM 文件支持转换为 WAV
-            document.getElementById('convertWavButton').disabled = false;
+        const fileExtension = file.name.toLowerCase().split('.').pop();
+        switch (fileExtension) {
+            case 'mp3':
+                await this.handleMP3File(file);
+                // MP3 文件不支持转换为 WAV
+                document.getElementById('convertWavButton').disabled = true;
+                break;
+            case 'wav':
+                await this.handleWAVFile(file);
+                // WAV 文件已经是 WAV 格式，不需要转换
+                document.getElementById('convertWavButton').disabled = true;
+                break;
+            default: // PCM 文件
+                await this.handlePCMFile(file);
+                // PCM 文件支持转换为 WAV
+                document.getElementById('convertWavButton').disabled = false;
         }
 
         // 启用播放和停止按钮
@@ -1097,5 +1105,124 @@ class PCMPlayer {
         if (data.byteLength % 2 !== 0) {
             throw new Error('无效的 PCM 文件格式：文件大小必须是 2 的倍数');
         }
+    }
+
+    async handleWAVFile(file) {
+        try {
+            // 创建文件 URL
+            const fileUrl = URL.createObjectURL(file);
+            
+            try {
+                // 获取 WAV 数据
+                const response = await fetch(fileUrl);
+                const arrayBuffer = await response.arrayBuffer();
+                
+                // 解析 WAV 头部信息
+                const wavInfo = this.parseWavHeader(arrayBuffer);
+                
+                // 更新音频配置
+                this.updateConfig({
+                    sampleRate: wavInfo.sampleRate,
+                    channels: wavInfo.channels,
+                    bitDepth: wavInfo.bitsPerSample
+                });
+
+                // 更新采样率选择器
+                const sampleRateSelect = document.getElementById('sampleRateSelect');
+                if (sampleRateSelect) {
+                    sampleRateSelect.value = wavInfo.sampleRate.toString();
+                }
+
+                // 创建一个新的 ArrayBuffer 副本用于解码
+                const arrayBufferCopy = arrayBuffer.slice(0);
+                
+                // 解码 WAV 数据
+                const audioBuffer = await this.audioContext.decodeAudioData(arrayBufferCopy);
+                
+                // 存储音频缓冲区和原始数据
+                this.audioData.audioBuffer = audioBuffer;
+                // 从原始的 arrayBuffer 中提取 PCM 数据
+                this.audioData.rawPcmData = arrayBuffer.slice(wavInfo.dataOffset);
+
+                // 更新 UI
+                document.getElementById('playButton').disabled = false;
+                document.getElementById('stopButton').disabled = false;
+                document.getElementById('convertButton').disabled = false;
+
+                // 更新文件信息显示
+                this.updateDisplayInfo('WAV', file.size, audioBuffer.duration, {
+                    sampleRate: wavInfo.sampleRate,
+                    channels: wavInfo.channels,
+                    bitDepth: wavInfo.bitsPerSample
+                });
+
+                // 获取音频数据并绘制波形
+                const pcmData = audioBuffer.getChannelData(0);
+                this.drawWaveform(pcmData);
+                this.resetPlayButton('play');
+
+            } finally {
+                // 清理 URL
+                URL.revokeObjectURL(fileUrl);
+            }
+        } catch (error) {
+            console.error('WAV 文件处理失败:', error);
+            alert('WAV 文件处理失败: ' + error.message);
+        }
+    }
+
+    parseWavHeader(arrayBuffer) {
+        const view = new DataView(arrayBuffer);
+        
+        // 验证 WAV 文件头
+        const riff = String.fromCharCode(...new Uint8Array(arrayBuffer.slice(0, 4)));
+        if (riff !== 'RIFF') {
+            throw new Error('无效的 WAV 文件：缺少 RIFF 标识');
+        }
+
+        const wave = String.fromCharCode(...new Uint8Array(arrayBuffer.slice(8, 12)));
+        if (wave !== 'WAVE') {
+            throw new Error('无效的 WAV 文件：缺少 WAVE 标识');
+        }
+
+        // 查找 fmt 块
+        let offset = 12;
+        let dataOffset = 0;
+        
+        while (offset < arrayBuffer.byteLength) {
+            const chunkId = String.fromCharCode(...new Uint8Array(arrayBuffer.slice(offset, offset + 4)));
+            const chunkSize = view.getUint32(offset + 4, true);
+
+            if (chunkId === 'fmt ') {
+                const audioFormat = view.getUint16(offset + 8, true);
+                if (audioFormat !== 1) {
+                    throw new Error('不支持的 WAV 格式：仅支持 PCM 格式');
+                }
+
+                const result = {
+                    channels: view.getUint16(offset + 10, true),
+                    sampleRate: view.getUint32(offset + 12, true),
+                    byteRate: view.getUint32(offset + 16, true),
+                    blockAlign: view.getUint16(offset + 20, true),
+                    bitsPerSample: view.getUint16(offset + 22, true),
+                    dataOffset: 0 // 将在找到 data 块时更新
+                };
+
+                // 继续寻找 data 块
+                offset += 8 + chunkSize;
+                while (offset < arrayBuffer.byteLength) {
+                    const nextChunkId = String.fromCharCode(...new Uint8Array(arrayBuffer.slice(offset, offset + 4)));
+                    if (nextChunkId === 'data') {
+                        result.dataOffset = offset + 8; // data 块头部后的偏移量
+                        return result;
+                    }
+                    const nextChunkSize = view.getUint32(offset + 4, true);
+                    offset += 8 + nextChunkSize;
+                }
+                throw new Error('无效的 WAV 文件：未找到数据块');
+            }
+            offset += 8 + chunkSize;
+        }
+        throw new Error('无效的 WAV 文件：未找到格式信息');
     }
 } 
