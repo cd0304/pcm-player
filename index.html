@@ -171,13 +171,39 @@
 
         .controls {
             display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 25px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .buttons-group {
+            display: flex;
             justify-content: center;
             align-items: center;
             gap: 15px;
-            margin-top: 25px;
+        }
+
+        .params-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
             flex-wrap: wrap;
-            position: relative;
-            width: 100%;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 15px;
+            border-right: 1px solid #e0e0e0;
+        }
+
+        .control-group:last-child {
+            border-right: none;
         }
 
         button {
@@ -339,52 +365,44 @@
             display: flex;
         }
 
-        .control-group {
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            border-right: 1px solid #e0e0e0;
-            padding-right: 15px;
-            margin-right: 5px;
-            border-left: none;
-            padding-left: 0;
-            margin-left: 0;
-            order: -1;
-        }
-
-        .control-group label {
-            color: #666;
-            font-size: 15px;
-            font-weight: 500;
-            white-space: nowrap;
-        }
-
-        .control-group input[type="range"] {
-            flex: 1;
-            width: 100%;
-        }
-
-        .sample-rate-select {
-            padding: 12px;
+        .audio-select {
+            padding: 8px 12px;
             border-radius: 6px;
             border: 1px solid #ddd;
             background-color: white;
-            font-size: 15px;
+            font-size: 14px;
             color: #333;
             cursor: pointer;
             transition: all 0.2s;
-            height: 45px;
+            flex: 1;
+            max-width: 200px;
         }
 
-        .sample-rate-select:hover {
+        .audio-select:hover {
             border-color: #2196F3;
         }
 
-        .sample-rate-select:focus {
+        .audio-select:focus {
             outline: none;
             border-color: #2196F3;
             box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            .params-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .control-group {
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+                padding: 10px 0;
+            }
+
+            .control-group:last-child {
+                border-bottom: none;
+            }
         }
 
         /* 社交媒体链接容器样式 */
@@ -433,35 +451,65 @@
         </div>
 
         <div class="controls">
-            <button id="playButton" disabled>
-                <svg class="icon" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                </svg>
-                播放
-            </button>
-            <button id="stopButton" disabled>
-                <svg class="icon" viewBox="0 0 24 24">
-                    <path d="M6 6h12v12H6z"/>
-                </svg>
-                停止
-            </button>
-            <button id="convertButton" disabled>
-                <svg class="icon" viewBox="0 0 24 24">
-                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                </svg>
-                转换为 MP3
-            </button>
+            <div class="buttons-group">
+                <button id="playButton" disabled>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    播放
+                </button>
+                <button id="stopButton" disabled>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    停止
+                </button>
+                <button id="convertButton" disabled>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                    转换为 MP3
+                </button>
+            </div>
 
-            <div class="control-group">
-                <label for="sampleRateSelect">采样率:</label>
-                <select id="sampleRateSelect" class="sample-rate-select">
-                    <option value="8000">8000 Hz</option>
-                    <option value="16000">16000 Hz</option>
-                    <option value="22050">22050 Hz</option>
-                    <option value="24000" selected>24000 Hz</option>
-                    <option value="44100">44100 Hz</option>
-                    <option value="48000">48000 Hz</option>
-                </select>
+            <div class="params-group">
+                <div class="control-group">
+                    <label for="sampleRateSelect">采样率:</label>
+                    <select id="sampleRateSelect" class="audio-select">
+                        <option value="8000">8000 Hz</option>
+                        <option value="16000">16000 Hz</option>
+                        <option value="22050">22050 Hz</option>
+                        <option value="24000" selected>24000 Hz</option>
+                        <option value="44100">44100 Hz</option>
+                        <option value="48000">48000 Hz</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="bitDepthSelect">位深度:</label>
+                    <select id="bitDepthSelect" class="audio-select">
+                        <option value="8">8 bit</option>
+                        <option value="16" selected>16 bit</option>
+                        <option value="24">24 bit</option>
+                        <option value="32">32 bit</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="channelsSelect">声道数:</label>
+                    <select id="channelsSelect" class="audio-select">
+                        <option value="1" selected>单声道</option>
+                        <option value="2">立体声</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="endiannessSelect">字节序:</label>
+                    <select id="endiannessSelect" class="audio-select">
+                        <option value="little" selected>小端序</option>
+                        <option value="big">大端序</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -534,4 +582,5 @@
         });
     </script>
 </body>
+</html> 
 </html> 

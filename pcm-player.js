@@ -1,6 +1,13 @@
 class PCMPlayer {
     constructor() {
-        this.sampleRate = 48000;
+        // 基本配置
+        this.config = {
+            sampleRate: 48000,
+            bitDepth: 16,
+            channels: 1,
+            endianness: 'little', // 'little' 或 'big'
+        };
+        
         this.isPlaying = false;
         this.audioBuffer = null;
         this.source = null;
@@ -21,7 +28,7 @@ class PCMPlayer {
 
         this.setupEventListeners();
         this.setupSampleButton();
-        this.setupSampleRateControl();
+        this.setupAudioControls();
         this.setupConvertButton();
         
         // 初始化文件名显示样式
@@ -74,34 +81,29 @@ class PCMPlayer {
                 }
                 const arrayBuffer = await response.arrayBuffer();
 
+                // 存储原始 PCM 数据
+                this.rawPcmData = arrayBuffer;
+
                 if (!this.audioContext) {
                     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                const pcmData = new Float32Array(arrayBuffer.byteLength / 2);
-                const dataView = new DataView(arrayBuffer);
-
-                for (let i = 0; i < pcmData.length; i++) {
-                    const int16 = dataView.getInt16(i * 2, true);
-                    pcmData[i] = int16 / 32768.0;
+                // 特判设置采样率为 24000Hz
+                this.config.sampleRate = 24000;
+                const sampleRateSelect = document.getElementById('sampleRateSelect');
+                if (sampleRateSelect) {
+                    sampleRateSelect.value = '24000';
                 }
 
-                this.audioBuffer = this.audioContext.createBuffer(1, pcmData.length, this.sampleRate);
-                this.audioBuffer.getChannelData(0).set(pcmData);
+                // 更新音频缓冲区
+                this.updateAudioBuffer();
 
-                document.getElementById('playButton').disabled = false;
-                document.getElementById('stopButton').disabled = false;
+                // 更新文件名显示
+                this.fileNameDisplay.textContent = 'test.pcm';
+                this.fileNameDisplay.classList.remove('no-file');
 
-                this.fileInfo.innerHTML = `
-                    <span class="file-tag type">PCM</span>
-                    <span class="file-tag size">${(arrayBuffer.byteLength / 1024).toFixed(2)} KB</span>
-                    <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
-                `;
-                this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
-
-                this.drawWaveform(pcmData);
-                this.resetPlayButton('play');
-
+                // 启用转换按钮
+                document.getElementById('convertButton').disabled = false;
             } catch (error) {
                 console.error('加载样例文件失败:', error);
                 alert('加载样例文件失败，请确保 test.pcm 文件存在');
@@ -109,14 +111,40 @@ class PCMPlayer {
         });
     }
 
-    setupSampleRateControl() {
+    setupAudioControls() {
+        // 采样率控制
         const sampleRateSelect = document.getElementById('sampleRateSelect');
-        sampleRateSelect.value = this.sampleRate;
-
+        sampleRateSelect.value = this.config.sampleRate;
         sampleRateSelect.addEventListener('change', (e) => {
-            const newSampleRate = parseInt(e.target.value);
-            if (this.rawPcmData && newSampleRate !== this.sampleRate) {
-                this.sampleRate = newSampleRate;
+            this.config.sampleRate = parseInt(e.target.value);
+            if (this.rawPcmData) {
+                this.updateAudioBuffer();
+            }
+        });
+
+        // 添加位深度选择
+        const bitDepthSelect = document.getElementById('bitDepthSelect');
+        bitDepthSelect.addEventListener('change', (e) => {
+            this.config.bitDepth = parseInt(e.target.value);
+            if (this.rawPcmData) {
+                this.updateAudioBuffer();
+            }
+        });
+
+        // 添加声道数选择
+        const channelsSelect = document.getElementById('channelsSelect');
+        channelsSelect.addEventListener('change', (e) => {
+            this.config.channels = parseInt(e.target.value);
+            if (this.rawPcmData) {
+                this.updateAudioBuffer();
+            }
+        });
+
+        // 添加字节序选择
+        const endiannessSelect = document.getElementById('endiannessSelect');
+        endiannessSelect.addEventListener('change', (e) => {
+            this.config.endianness = e.target.value;
+            if (this.rawPcmData) {
                 this.updateAudioBuffer();
             }
         });
@@ -146,45 +174,84 @@ class PCMPlayer {
             this.pausedAt = 0;
             this.currentTimeDisplay.textContent = this.formatTime(0);
 
-            // 重新创建 Float32Array
-            const pcmData = new Float32Array(this.rawPcmData.byteLength / 2);
+            // 计算每个采样点占用的字节数
+            const bytesPerSample = this.config.bitDepth / 8;
+            const totalSamples = Math.floor(this.rawPcmData.byteLength / (bytesPerSample * this.config.channels));
+            
+            // 创建多声道数据数组
+            const channelData = Array(this.config.channels).fill().map(() => new Float32Array(totalSamples));
             const dataView = new DataView(this.rawPcmData);
 
-            // 将 16 位整数转换为浮点数
-            for (let i = 0; i < pcmData.length; i++) {
-                const int16 = dataView.getInt16(i * 2, true);  // true 表示小端字节序
-                pcmData[i] = int16 / 32768.0;  // 归一化到 [-1, 1] 范围
+            // 检测系统字节序并设置
+            this.config.endianness = this.detectEndianness();
+            
+            // 更新字节序选择器
+            const endiannessSelect = document.getElementById('endiannessSelect');
+            if (endiannessSelect) {
+                endiannessSelect.value = this.config.endianness;
+                // 禁用选择器，因为我们使用系统字节序
+                endiannessSelect.disabled = true;
+                // 添加提示信息
+                endiannessSelect.title = `已自动检测为${this.config.endianness === 'little' ? '小端序' : '大端序'}`;
             }
 
-            // 验证数据
-            if (pcmData.length === 0) {
-                throw new Error('PCM 数据长度为 0');
-            }
+            const isLittleEndian = this.config.endianness === 'little';
 
-            console.log(`正在更新音频缓冲区 - 采样率: ${this.sampleRate}Hz, 数据长度: ${pcmData.length}`);
+            // 根据位深度选择合适的读取方法
+            for (let i = 0; i < totalSamples; i++) {
+                for (let channel = 0; channel < this.config.channels; channel++) {
+                    const byteOffset = (i * this.config.channels + channel) * bytesPerSample;
+                    let sample = 0;
+
+                    switch (this.config.bitDepth) {
+                        case 8:
+                            sample = dataView.getInt8(byteOffset) / 128.0;
+                            break;
+                        case 16:
+                            sample = dataView.getInt16(byteOffset, isLittleEndian) / 32768.0;
+                            break;
+                        case 24:
+                            // 24位需要特殊处理
+                            const byte1 = dataView.getUint8(byteOffset);
+                            const byte2 = dataView.getUint8(byteOffset + 1);
+                            const byte3 = dataView.getUint8(byteOffset + 2);
+                            let val = isLittleEndian
+                                ? (byte3 << 16) | (byte2 << 8) | byte1
+                                : (byte1 << 16) | (byte2 << 8) | byte3;
+                            // 处理符号位
+                            if (val & 0x800000) val |= ~0xFFFFFF;
+                            sample = val / 8388608.0;
+                            break;
+                        case 32:
+                            sample = dataView.getFloat32(byteOffset, isLittleEndian);
+                            break;
+                        default:
+                            throw new Error(`不支持的位深度: ${this.config.bitDepth}`);
+                    }
+                    channelData[channel][i] = sample;
+                }
+            }
 
             // 创建新的音频缓冲区
             this.audioBuffer = this.audioContext.createBuffer(
-                1,                // 单声道
-                pcmData.length,   // 采样点数量
-                this.sampleRate   // 新的采样率
+                this.config.channels,
+                totalSamples,
+                this.config.sampleRate
             );
 
             // 将数据写入缓冲区
-            const channelData = this.audioBuffer.getChannelData(0);
-            channelData.set(pcmData);
+            for (let channel = 0; channel < this.config.channels; channel++) {
+                this.audioBuffer.copyToChannel(channelData[channel], channel);
+            }
 
             // 更新显示信息
             this.durationDisplay.textContent = this.formatTime(this.audioBuffer.duration);
             
-            // 更新文件信息中的时长
-            const durationTag = this.fileInfo.querySelector('.file-tag.duration');
-            if (durationTag) {
-                durationTag.textContent = this.formatTime(this.audioBuffer.duration);
-            }
+            // 更新文件信息
+            this.updateFileInfo();
 
-            // 重新绘制波形
-            this.drawWaveform(pcmData);
+            // 重新绘制波形（使用第一个声道的数据）
+            this.drawWaveform(channelData[0]);
 
             // 重置播放按钮状态
             document.getElementById('playButton').disabled = false;
@@ -204,6 +271,17 @@ class PCMPlayer {
             this.fileInfo.innerHTML = '<span class="file-tag">音频处理失败</span>';
             this.durationDisplay.textContent = '00:00';
         }
+    }
+
+    updateFileInfo() {
+        this.fileInfo.innerHTML = `
+            <span class="file-tag type">PCM</span>
+            <span class="file-tag size">${(this.rawPcmData.byteLength / 1024).toFixed(2)} KB</span>
+            <span class="file-tag duration">${this.formatTime(this.audioBuffer.duration)}</span>
+            <span class="file-tag sample-rate">${this.config.sampleRate}Hz</span>
+            <span class="file-tag channels">${this.config.channels}ch</span>
+            <span class="file-tag bit-depth">${this.config.bitDepth}bit</span>
+        `;
     }
 
     handleProgressClick(e) {
@@ -286,13 +364,13 @@ class PCMPlayer {
             const pcmData = audioBuffer.getChannelData(0);
             
             // 更新采样率
-            this.sampleRate = audioBuffer.sampleRate;
+            this.config.sampleRate = audioBuffer.sampleRate;
             const sampleRateSelect = document.getElementById('sampleRateSelect');
             if (sampleRateSelect) {
                 const option = Array.from(sampleRateSelect.options)
-                    .find(opt => parseInt(opt.value) === this.sampleRate);
+                    .find(opt => parseInt(opt.value) === this.config.sampleRate);
                 if (option) {
-                    sampleRateSelect.value = this.sampleRate;
+                    sampleRateSelect.value = this.config.sampleRate;
                 }
             }
 
@@ -324,8 +402,8 @@ class PCMPlayer {
     async handlePCMFile(file) {
         // 从文件名检测采样率并更新
         const detectedSampleRate = this.detectSampleRateFromFileName(file.name);
-        if (detectedSampleRate !== this.sampleRate) {
-            this.sampleRate = detectedSampleRate;
+        if (detectedSampleRate !== this.config.sampleRate) {
+            this.config.sampleRate = detectedSampleRate;
             const sampleRateSelect = document.getElementById('sampleRateSelect');
             if (sampleRateSelect) {
                 const option = Array.from(sampleRateSelect.options)
@@ -364,7 +442,7 @@ class PCMPlayer {
         this.audioBuffer = this.audioContext.createBuffer(
             1,
             pcmData.length,
-            this.sampleRate
+            this.config.sampleRate
         );
         this.audioBuffer.getChannelData(0).set(pcmData);
 
@@ -822,7 +900,7 @@ class PCMPlayer {
                 script.onerror = reject;
             });
 
-            const mp3encoder = new lamejs.Mp3Encoder(1, this.sampleRate, 128);
+            const mp3encoder = new lamejs.Mp3Encoder(1, this.config.sampleRate, 128);
             const samples = new Int16Array(this.rawPcmData);
             const mp3Data = [];
 
@@ -880,5 +958,15 @@ class PCMPlayer {
             convertButton.disabled = false;
             convertButton.innerHTML = originalContent;
         }
+    }
+
+    detectEndianness() {
+        // 使用 DataView 和 TypedArray 来检测系统字节序
+        const buffer = new ArrayBuffer(2);
+        new DataView(buffer).setInt16(0, 256, true);
+        const systemEndianness = new Int16Array(buffer)[0] === 256 ? 'little' : 'big';
+        
+        console.log(`系统字节序检测结果: ${systemEndianness === 'little' ? '小端序' : '大端序'}`);
+        return systemEndianness;
     }
 } 
