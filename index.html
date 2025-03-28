@@ -22,7 +22,7 @@
     <meta name="twitter:image" content="./share.png">
     
     <!-- 访问统计脚本 -->
-    <script defer src="https://busuanzi.9420.ltd/js"></script>
+    <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
     
     <!-- Canonical URL -->
     <link rel="canonical" href="https://pcm.qer.im">
@@ -640,26 +640,17 @@
             </a>
         </div>
         
-        <div class="visitor-stats">
-            <div class="stat-item">
-                <span class="stat-value" id="busuanzi_page_pv"></span>
-                <span class="stat-label">访问量</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="busuanzi_page_uv"></span>
-                <span class="stat-label">用户数</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="busuanzi_site_pv"></span>
-                <span class="stat-label">总访问</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="busuanzi_site_uv"></span>
-                <span class="stat-label">总用户</span>
-            </div>
-        </div>
+        <span id="busuanzi_container_site_pv" style="display: block; text-align: center; font-size: 12px; color: #999; margin: 10px 0;">本站总访问量<span id="busuanzi_value_site_pv"></span>次</span>
+        
         <div class="blog-link-container">
             <a href="https://blog.qer.im/projects" target="_blank" class="blog-link-text">更多音视频工具请访问我的博客 blog.qer.im/projects </a>
+        </div>
+        
+        <div class="visitor-stats" style="display: none;">
+            <div class="stat-item">
+                <span class="stat-value" id="busuanzi_value_site_pv"></span>
+                <span class="stat-label">本站总访问量</span>
+            </div>
         </div>
     </div>
     <script src="pcm-player.js"></script>
