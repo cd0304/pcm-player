@@ -517,6 +517,101 @@
             color: #2196F3;
             text-decoration: underline;
         }
+        
+        /* 赞赏码样式 */
+        .reward-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+            width: 100%;
+            gap: 15px;
+        }
+        
+        .reward-title {
+            font-size: 15px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .reward-qrcodes {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+        }
+        
+        .qrcode-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .qrcode-img {
+            width: 180px;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            transition: transform 0.3s;
+            max-width: 100%;
+        }
+        
+        .qrcode-img:hover {
+            transform: scale(1.05);
+        }
+        
+        .qrcode-label {
+            display: none;
+        }
+        
+        /* 弹出层样式 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            position: relative;
+        }
+        
+        .close-modal {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            background: #f5f5f5;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            color: #666;
+            font-size: 18px;
+            line-height: 1;
+        }
+        
+        .close-modal:hover {
+            background: #eee;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -638,6 +733,44 @@
                 </svg>
                 Follow on X
             </a>
+            <a href="javascript:void(0)" id="rewardButton" class="reward-link">
+                <svg height="24" viewBox="0 0 24 24" width="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M19 3h-14a2 2 0 0 0 -2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2 -2v-14a2 2 0 0 0 -2 -2z" />
+                    <path d="M7 7h10" />
+                    <path d="M12 3v7" />
+                    <path d="M21 17.314c-2.971 -1.923 -15 -8.779 -15 -1.864c0 1.716 1.52 2.55 2.985 2.55c3.512 0 6.814 -5.425 6.814 -8h-6.604" />
+                </svg>
+                赞赏支持
+            </a>
+            <a href="https://github.com/wbxl2000/pcm.qer.im/issues/new" target="_blank" class="issues-link">
+                <svg height="24" viewBox="0 0 24 24" width="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10" />
+                    <path d="M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2" />
+                </svg>
+                功能建议
+            </a>
+        </div>
+        
+        <!-- 弹出层 -->
+        <div class="modal-overlay" id="rewardModal">
+            <div class="modal-content">
+                <button class="close-modal" id="closeModal">×</button>
+                <div class="reward-container">
+                    <div class="reward-title">如果觉得这个工具有帮助，可以考虑赞赏支持～</div>
+                    <div class="reward-qrcodes">
+                        <div class="qrcode-item">
+                            <img src="wx.JPG" alt="微信支付" class="qrcode-img">
+                            <div class="qrcode-label">微信支付</div>
+                        </div>
+                        <div class="qrcode-item">
+                            <img src="zfb.JPG" alt="支付宝" class="qrcode-img">
+                            <div class="qrcode-label">支付宝</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <span id="busuanzi_container_site_pv" style="display: block; text-align: center; font-size: 12px; color: #999; margin: 10px 0;">本站总访问量<span id="busuanzi_value_site_pv"></span>次</span>
@@ -702,6 +835,26 @@
                 seconds = Math.floor(seconds % 60);
                 return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             }
+
+            // 赞赏弹窗相关代码
+            const rewardModal = document.getElementById('rewardModal');
+            const rewardButton = document.getElementById('rewardButton');
+            const closeModal = document.getElementById('closeModal');
+
+            rewardButton.addEventListener('click', () => {
+                rewardModal.classList.add('show');
+            });
+
+            closeModal.addEventListener('click', () => {
+                rewardModal.classList.remove('show');
+            });
+
+            // 点击弹窗外部关闭
+            rewardModal.addEventListener('click', (e) => {
+                if (e.target === rewardModal) {
+                    rewardModal.classList.remove('show');
+                }
+            });
         });
     </script>
 </body>
