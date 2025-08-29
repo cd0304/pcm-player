@@ -516,7 +516,10 @@ class PCMPlayer {
         this.playerState.amplificationFactor = Math.min(Math.max(autoAmplificationFactor, 0.5), 5);
 
         // 计算波形点
-        this.calculateWaveformPoints(pcmData, width, height, step, centerY);
+        // this.calculateWaveformPoints(pcmData, width, height, step, centerY);
+        // 计算波形点（峰值包络）
+        this.calculateWaveformPointsPeak(pcmData, width, height, step, centerY);
+
 
         // 绘制波形
         this.drawCurrentState();
@@ -542,6 +545,30 @@ class PCMPlayer {
                 bottomY: Math.max(centerY - amplitude, 0),
                 timePosition: this.audioData.isMP3 ? 
                     (i / width) * this.audioData.mp3Audio.duration : 
+                    (startIndex / pcmData.length) * this.audioData.audioBuffer.duration
+            });
+        }
+    }
+
+    // 峰值包络：按像素窗口取绝对值最大值
+    calculateWaveformPointsPeak(pcmData, width, height, step, centerY) {
+        for (let i = 0; i < width; i++) {
+            const startIndex = i * step;
+            let maxAbs = 0;
+
+            for (let j = 0; j < step && startIndex + j < pcmData.length; j++) {
+                const v = Math.abs(pcmData[startIndex + j]);
+                if (v > maxAbs) maxAbs = v;
+            }
+
+            const amplitude = maxAbs * centerY * 0.95 * this.playerState.amplificationFactor;
+
+            this.waveformPoints.push({
+                x: i,
+                y: Math.min(centerY + amplitude, height),
+                bottomY: Math.max(centerY - amplitude, 0),
+                timePosition: this.audioData.isMP3 ?
+                    (i / width) * this.audioData.mp3Audio.duration :
                     (startIndex / pcmData.length) * this.audioData.audioBuffer.duration
             });
         }
