@@ -26,7 +26,8 @@ class PCMPlayer {
             mp3Audio: null,
             isMP3: false,
             mediaElement: null,
-            mp3Data: null
+            mp3Data: null,
+            elementUrl: null
         };
 
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -34,6 +35,7 @@ class PCMPlayer {
         this.analyser.fftSize = 2048;
         this.mediaElement = null; // 存储 MP3 的 MediaElementSource
         this.mp3Data = null;      // 存储 MP3 的音频数据
+        this.waveSurfer = null;   // wavesurfer 实例（按需）
 
         this.initializeDOMElements();
 
@@ -42,6 +44,10 @@ class PCMPlayer {
         this.setupAudioControls();
         this.setupConvertButton();
         this.setupWavConvertButton();
+
+        // 播放方式控制（默认 WebAudio）
+        this.playMode = 'webaudio';
+        this.setupHtmlAudioEvents();
         
         // 初始化文件名显示样式
         this.fileNameDisplay.classList.add('no-file');
@@ -57,6 +63,7 @@ class PCMPlayer {
         this.durationDisplay = document.getElementById('duration');
         this.fileInfo = document.getElementById('fileInfo');
         this.fileNameDisplay = document.getElementById('fileNameDisplay');
+        this.htmlAudio = document.getElementById('htmlAudio');
 
         this.canvas.width = this.canvas.offsetWidth;
         this.canvas.height = this.canvas.offsetHeight;
@@ -169,6 +176,138 @@ class PCMPlayer {
                 }
             });
         }
+
+        // 播放方式选择
+        const playModeSelect = document.getElementById('playModeSelect');
+        if (playModeSelect) {
+            playModeSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                const nextMode = val === 'element' ? 'element' : (val === 'wavesurfer' ? 'wavesurfer' : 'webaudio');
+                if (nextMode === this.playMode) return;
+
+                const wasPlaying = this.playerState.isPlaying;
+                let current = this.playerState.pausedAt;
+
+                if (this.playMode === 'webaudio' && wasPlaying) {
+                    this.pause();
+                    current = this.playerState.pausedAt;
+                }
+
+                if ((this.playMode === 'element' || this.playMode === 'wavesurfer') && this.htmlAudio) {
+                    this.htmlAudio.pause();
+                    current = this.htmlAudio.currentTime || 0;
+                }
+
+                this.playMode = nextMode;
+
+                if (this.playMode === 'element' && this.htmlAudio) {
+                    if (this.audioData.elementUrl) {
+                        this.htmlAudio.src = this.audioData.elementUrl;
+                        this.htmlAudio.currentTime = current || 0;
+                    }
+                } else if (this.playMode === 'wavesurfer') {
+                    this.ensureWaveSurfer();
+                    if (this.audioData.elementUrl) {
+                        this.waveSurfer.setOptions({ url: this.audioData.elementUrl });
+                        this.waveSurfer.once('ready', () => {
+                            this.waveSurfer.setTime(current || 0);
+                        });
+                    }
+                } else {
+                    this.updatePlayerState({ pausedAt: current });
+                }
+
+                if (wasPlaying) this.togglePlay();
+                this.drawCurrentState();
+            });
+        }
+    }
+
+    ensureWaveSurfer() {
+        if (this.waveSurfer) return;
+        const container = document.getElementById('wsWaveform');
+        if (!window.WaveSurfer || !container) return;
+
+        this.waveSurfer = window.WaveSurfer.create({
+            container: container,
+            waveColor: '#2196F3',
+            progressColor: '#1976D2',
+            height: 160,
+        });
+
+        // 事件绑定：同步时间与按钮
+        this.waveSurfer.on('timeupdate', (t) => {
+            if (this.playMode !== 'wavesurfer') return;
+            this.updatePlayerState({ currentTime: t });
+            this.currentTimeDisplay.textContent = this.formatTime(t);
+        });
+        this.waveSurfer.on('play', () => {
+            if (this.playMode !== 'wavesurfer') return;
+            this.updatePlayerState({ isPlaying: true });
+            this.resetPlayButton('pause');
+        });
+        this.waveSurfer.on('pause', () => {
+            if (this.playMode !== 'wavesurfer') return;
+            this.updatePlayerState({ isPlaying: false, pausedAt: this.waveSurfer.getCurrentTime() });
+            this.resetPlayButton('play');
+        });
+        this.waveSurfer.on('finish', () => {
+            if (this.playMode !== 'wavesurfer') return;
+            this.stop();
+        });
+    }
+
+    setupHtmlAudioEvents() {
+        if (!this.htmlAudio) return;
+        // 建立一次音频路由
+        if (!this.mediaElement) {
+            try {
+                this.mediaElement = this.audioContext.createMediaElementSource(this.htmlAudio);
+                this.mediaElement.connect(this.analyser);
+                this.analyser.connect(this.audioContext.destination);
+            } catch (_) {
+                // 同一元素重复创建会抛错，忽略
+            }
+        }
+
+        const onTimeUpdate = () => {
+            if (this.playMode !== 'element') return;
+            this.updatePlayerState({ currentTime: this.htmlAudio.currentTime || 0 });
+            this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
+            this.drawCurrentState();
+        };
+        const onPlay = () => {
+            if (this.playMode !== 'element') return;
+            this.updatePlayerState({ isPlaying: true });
+            this.resetPlayButton('pause');
+        };
+        const onPause = () => {
+            if (this.playMode !== 'element') return;
+            this.updatePlayerState({ isPlaying: false, pausedAt: this.htmlAudio.currentTime || 0 });
+            this.resetPlayButton('play');
+        };
+        const onEnded = () => {
+            if (this.playMode !== 'element') return;
+            this.stop();
+        };
+
+        // 先解绑旧的（若存在）
+        this.htmlAudio.removeEventListener('timeupdate', this._onHtmlAudioTimeUpdate);
+        this.htmlAudio.removeEventListener('play', this._onHtmlAudioPlay);
+        this.htmlAudio.removeEventListener('pause', this._onHtmlAudioPause);
+        this.htmlAudio.removeEventListener('ended', this._onHtmlAudioEnded);
+
+        // 缓存引用，便于解绑
+        this._onHtmlAudioTimeUpdate = onTimeUpdate;
+        this._onHtmlAudioPlay = onPlay;
+        this._onHtmlAudioPause = onPause;
+        this._onHtmlAudioEnded = onEnded;
+
+        // 绑定事件
+        this.htmlAudio.addEventListener('timeupdate', onTimeUpdate);
+        this.htmlAudio.addEventListener('play', onPlay);
+        this.htmlAudio.addEventListener('pause', onPause);
+        this.htmlAudio.addEventListener('ended', onEnded);
     }
 
     setupConvertButton() {
@@ -323,13 +462,29 @@ class PCMPlayer {
         // 使用波形点对应的时间位置
         const seekTime = Math.min(clickedPoint.timePosition, this.audioData.audioBuffer.duration);
 
-        if (this.playerState.isPlaying) {
-            this.pause();
+        if (this.playMode === 'element' && this.htmlAudio) {
+            this.htmlAudio.currentTime = seekTime;
+            if (!this.playerState.isPlaying) {
+                this.updatePlayerState({ pausedAt: seekTime, currentTime: seekTime });
+                this.currentTimeDisplay.textContent = this.formatTime(seekTime);
+                this.drawCurrentState();
+            }
+        } else if (this.playMode === 'wavesurfer' && this.waveSurfer) {
+            this.waveSurfer.setTime(seekTime);
+            if (!this.playerState.isPlaying) {
+                this.updatePlayerState({ pausedAt: seekTime, currentTime: seekTime });
+                this.currentTimeDisplay.textContent = this.formatTime(seekTime);
+                this.drawCurrentState();
+            }
+        } else {
+            if (this.playerState.isPlaying) {
+                this.pause();
+            }
+            this.playerState.currentTime = seekTime;
+            this.playerState.pausedAt = seekTime;
+            this.currentTimeDisplay.textContent = this.formatTime(seekTime);
+            this.drawCurrentState();
         }
-        this.playerState.currentTime = seekTime;
-        this.playerState.pausedAt = seekTime;
-        this.currentTimeDisplay.textContent = this.formatTime(seekTime);
-        this.drawCurrentState();
     }
 
     formatTime(seconds) {
@@ -374,8 +529,11 @@ class PCMPlayer {
     }
 
     async handleMP3File(file) {
-        // 创建文件 URL
+        // 创建临时 URL 用于解码
         const fileUrl = URL.createObjectURL(file);
+        // 为 element 模式准备持久 URL
+        if (this.audioData.elementUrl) URL.revokeObjectURL(this.audioData.elementUrl);
+        this.audioData.elementUrl = URL.createObjectURL(file);
         
         try {
             // 获取 MP3 数据
@@ -415,9 +573,15 @@ class PCMPlayer {
             `;
             this.durationDisplay.textContent = this.formatTime(audioBuffer.duration);
 
-            // 绘制波形
+            // 绘制波形（ws 模式下也保留现有画布，便于统一 UI）
             this.drawWaveform(pcmData);
             this.resetPlayButton('play');
+
+            // 若当前为元素模式，设置音频源
+            if (this.playMode === 'element' && this.htmlAudio && this.audioData.elementUrl) {
+                this.htmlAudio.src = this.audioData.elementUrl;
+                this.htmlAudio.currentTime = 0;
+            }
         } finally {
             // 清理 URL
             URL.revokeObjectURL(fileUrl);
@@ -449,6 +613,32 @@ class PCMPlayer {
 
         this.validatePCMFile(this.audioData.rawPcmData);
         this.updateAudioBuffer();
+
+        // 为元素模式准备 WAV 封装的 URL
+        try {
+            const dataLength = this.audioData.audioBuffer.length * this.config.channels * (this.config.bitDepth / 8);
+            const wavHeader = this.createWavHeader(
+                dataLength,
+                this.config.channels,
+                this.config.sampleRate,
+                this.config.bitDepth
+            );
+            const wavBlob = new Blob([wavHeader, this.audioData.rawPcmData], { type: 'audio/wav' });
+            if (this.audioData.elementUrl) URL.revokeObjectURL(this.audioData.elementUrl);
+            this.audioData.elementUrl = URL.createObjectURL(wavBlob);
+            if (this.playMode === 'element' && this.htmlAudio) {
+                this.htmlAudio.src = this.audioData.elementUrl;
+                this.htmlAudio.currentTime = 0;
+            }
+            if (this.playMode === 'wavesurfer') {
+                this.ensureWaveSurfer();
+                if (this.waveSurfer) {
+                    this.waveSurfer.setOptions({ url: this.audioData.elementUrl });
+                }
+            }
+        } catch (e) {
+            console.warn('生成元素模式 WAV 失败:', e);
+        }
 
         // 启用相关按钮，更新显示
         this.updateAllButtonsState('enabled');
@@ -543,9 +733,7 @@ class PCMPlayer {
                 x: i,
                 y: Math.min(centerY + amplitude, height),
                 bottomY: Math.max(centerY - amplitude, 0),
-                timePosition: this.audioData.isMP3 ? 
-                    (i / width) * this.audioData.mp3Audio.duration : 
-                    (startIndex / pcmData.length) * this.audioData.audioBuffer.duration
+                timePosition: (startIndex / pcmData.length) * this.audioData.audioBuffer.duration
             });
         }
     }
@@ -581,15 +769,22 @@ class PCMPlayer {
         const width = this.canvas.width;
         const height = this.canvas.height;
 
+        // 模式下切换可控制自定义画布显示
+        const wsContainer = document.getElementById('wsWaveform');
+        if (wsContainer) {
+            wsContainer.style.display = this.playMode === 'wavesurfer' ? 'block' : 'none';
+        }
+        this.canvas.style.display = this.playMode === 'wavesurfer' ? 'none' : 'block';
+
         ctx.clearRect(0, 0, width, height);
         this.drawGrid(ctx, width, height);
 
         // 计算当前播放时间
-        const currentTime = this.audioData.isMP3 ? 
-            this.audioData.mp3Audio.currentTime : 
-            (this.playerState.isPlaying ? 
-                this.playerState.pausedAt + (this.audioContext.currentTime - this.playerState.startTime) : 
-                this.playerState.pausedAt);
+        const currentTime = ((this.playMode === 'element' && this.htmlAudio)
+            ? (this.htmlAudio.currentTime || 0)
+            : (this.playerState.isPlaying
+                ? this.playerState.pausedAt + (this.audioContext.currentTime - this.playerState.startTime)
+                : this.playerState.pausedAt));
 
         // 绘制波形
         this.drawWaveformPath(ctx);
@@ -614,12 +809,10 @@ class PCMPlayer {
     }
 
     drawPlaybackProgress(ctx, width, height, currentTime) {
-        const audioSource = this.audioData.isMP3 ? this.audioData.mp3Audio : this.audioData.audioBuffer;
+        const audioSource = this.audioData.audioBuffer;
         if (!audioSource) return;
 
-        const duration = this.audioData.isMP3 ? 
-            this.audioData.mp3Audio.duration : 
-            this.audioData.audioBuffer.duration;
+        const duration = this.audioData.audioBuffer.duration;
         const progress = currentTime / duration;
         const progressX = width * progress;
 
@@ -654,53 +847,65 @@ class PCMPlayer {
     }
 
     togglePlay() {
-        if (this.audioData.isMP3) {
+        if (this.playMode === 'element' && this.htmlAudio) {
             if (!this.playerState.isPlaying) {
-                this.audioData.mp3Audio.currentTime = this.playerState.pausedAt;
-                this.audioData.mp3Audio.play();
-                this.updatePlayerState({ isPlaying: true });
-                this.resetPlayButton('pause');
-                
-                // 更新进度
-                this.updateProgressInterval = setInterval(() => {
-                    this.updatePlayerState({ 
-                        currentTime: this.audioData.mp3Audio.currentTime 
-                    });
-                    this.currentTimeDisplay.textContent = this.formatTime(this.playerState.currentTime);
-                    this.drawCurrentState();
-                }, 100);
+                if (!this.htmlAudio.src && this.audioData.elementUrl) {
+                    this.htmlAudio.src = this.audioData.elementUrl;
+                }
+                this.htmlAudio.currentTime = this.playerState.pausedAt || 0;
+                this.htmlAudio.play();
             } else {
                 this.pause();
             }
+            return;
+        }
+
+        if (this.playMode === 'wavesurfer') {
+            this.ensureWaveSurfer();
+            if (this.audioData.elementUrl && this.waveSurfer && !this.waveSurfer.getDuration()) {
+                this.waveSurfer.setOptions({ url: this.audioData.elementUrl });
+                this.waveSurfer.once('ready', () => {
+                    this.waveSurfer.setTime(this.playerState.pausedAt || 0);
+                    this.waveSurfer.play();
+                });
+                return;
+            }
+            if (!this.playerState.isPlaying) {
+                this.waveSurfer.setTime(this.playerState.pausedAt || 0);
+                this.waveSurfer.play();
+            } else {
+                this.waveSurfer.pause();
+            }
+            return;
+        }
+
+        if (!this.playerState.isPlaying) {
+            this.play(this.playerState.pausedAt);
         } else {
-            if (!this.playerState.isPlaying) {
-                this.play(this.playerState.pausedAt);
-            } else {
-                this.pause();
-            }
+            this.pause();
         }
     }
 
     pause() {
-        if (this.audioData.isMP3) {
-            if (this.audioData.mp3Audio) {
-                this.audioData.mp3Audio.pause();
-                this.updatePlayerState({ 
-                    pausedAt: this.audioData.mp3Audio.currentTime 
-                });
-                clearInterval(this.updateProgressInterval);
-            }
-        } else {
-            if (this.audioData.source) {
-                this.audioData.source.stop();
-                this.updateAudioData({ source: null });
-            }
-            this.updatePlayerState({ 
-                pausedAt: this.playerState.currentTime 
-            });
+        if (this.playMode === 'element' && this.htmlAudio) {
+            this.htmlAudio.pause();
+            this.updatePlayerState({ pausedAt: this.htmlAudio.currentTime || 0, isPlaying: false });
+            this.resetPlayButton('play');
+            return;
         }
-        
-        this.updatePlayerState({ isPlaying: false });
+
+        if (this.playMode === 'wavesurfer' && this.waveSurfer) {
+            this.waveSurfer.pause();
+            this.updatePlayerState({ pausedAt: this.waveSurfer.getCurrentTime(), isPlaying: false });
+            this.resetPlayButton('play');
+            return;
+        }
+
+        if (this.audioData.source) {
+            this.audioData.source.stop();
+            this.updateAudioData({ source: null });
+        }
+        this.updatePlayerState({ pausedAt: this.playerState.currentTime, isPlaying: false });
         this.resetPlayButton('play');
     }
 
@@ -767,25 +972,22 @@ class PCMPlayer {
     }
 
     stop() {
-        if (this.audioData.isMP3) {
-            if (this.audioData.mp3Audio) {
-                this.audioData.mp3Audio.pause();
-                this.audioData.mp3Audio.currentTime = 0;
-                clearInterval(this.updateProgressInterval);
-            }
+        if (this.playMode === 'element' && this.htmlAudio) {
+            this.htmlAudio.pause();
+            try { this.htmlAudio.currentTime = 0; } catch (_) {}
         } else {
             if (this.audioData.source) {
                 this.audioData.source.stop();
                 this.updateAudioData({ source: null });
             }
         }
-        
-        this.updatePlayerState({
-            isPlaying: false,
-            currentTime: 0,
-            pausedAt: 0
-        });
-        
+
+        if (this.playMode === 'wavesurfer' && this.waveSurfer) {
+            this.waveSurfer.pause();
+            this.waveSurfer.setTime(0);
+        }
+
+        this.updatePlayerState({ isPlaying: false, currentTime: 0, pausedAt: 0 });
         this.currentTimeDisplay.textContent = this.formatTime(0);
         this.resetPlayButton('play');
         this.drawCurrentState();
@@ -1216,8 +1418,11 @@ class PCMPlayer {
 
     async handleWAVFile(file) {
         try {
-            // 创建文件 URL
+            // 创建临时 URL 用于解码
             const fileUrl = URL.createObjectURL(file);
+            // 为 element 模式准备持久 URL
+            if (this.audioData.elementUrl) URL.revokeObjectURL(this.audioData.elementUrl);
+            this.audioData.elementUrl = URL.createObjectURL(file);
             
             try {
                 // 获取 WAV 数据
@@ -1280,6 +1485,18 @@ class PCMPlayer {
                 const pcmData = audioBuffer.getChannelData(0);
                 this.drawWaveform(pcmData);
                 this.resetPlayButton('play');
+
+                // 若当前为元素模式，设置音频源
+                if (this.playMode === 'element' && this.htmlAudio && this.audioData.elementUrl) {
+                    this.htmlAudio.src = this.audioData.elementUrl;
+                    this.htmlAudio.currentTime = 0;
+                }
+                if (this.playMode === 'wavesurfer') {
+                    this.ensureWaveSurfer();
+                    if (this.waveSurfer) {
+                        this.waveSurfer.setOptions({ url: this.audioData.elementUrl });
+                    }
+                }
 
             } finally {
                 // 清理 URL

@@ -54,6 +54,7 @@
             border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
             padding: 15px;
+            position: relative;
         }
 
         .waveform-header {
@@ -64,6 +65,10 @@
             padding: 0 10px;
             color: #666;
         }
+        .mode-switch { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; gap: 0; background: transparent; border: 1px solid #eee; border-radius: 4px; padding: 2px; box-shadow: none; }
+        .mode-btn { padding: 3px 8px; border-radius: 4px; border: none; background: transparent; font-size: 11px; color: #777; cursor: pointer; transition: background-color .12s ease, color .12s ease; }
+        .mode-btn:hover { color: #555; background: rgba(0,0,0,0.02); }
+        .mode-btn.active { background: #f5f5f5; color: #333; box-shadow: none; }
 
         .waveform-header .filename {
             font-size: 15px;
@@ -157,6 +162,10 @@
             background: #ffffff;
             border-radius: 8px;
             cursor: pointer;
+        }
+        #wsWaveform {
+            width: 100%;
+            height: 160px;
         }
 
         .progress-container, #progressBar {
@@ -636,11 +645,16 @@
         </div>
 
         <div class="waveform-container">
+            <div class="mode-switch" id="modeSwitch">
+                <button class="mode-btn" data-mode="wavesurfer">新版图形</button>
+                <button class="mode-btn" data-mode="webaudio">旧版图形</button>
+            </div>
             <div class="waveform-header">
                 <div class="filename" id="fileNameDisplay">未选择文件</div>
                 <div class="file-info" id="fileInfo"></div>
             </div>
             <canvas id="waveformCanvas"></canvas>
+            <div id="wsWaveform" style="display:none"></div>
         </div>
         
         <div class="time-display">
@@ -714,6 +728,8 @@
                         <option value="big">大端序</option>
                     </select>
                 </div>
+
+                
             </div>
         </div>
     </div>
@@ -786,75 +802,44 @@
             </div>
         </div>
     </div>
-    <script src="pcm-player.js"></script>
+    <!-- wavesurfer 脚本（v7 UMD） -->
+    <script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <!-- 隐藏的音频元素，用于“audio 元素 src”播放模式 -->
+    <audio id="htmlAudio" preload="metadata" style="display:none"></audio>
+    <!-- 新的入口与播放器拆分 -->
+    <script src="./utils.js"></script>
+    <script src="./player-webaudio.js"></script>
+    <script src="./player-wavesurfer.js"></script>
+    <script src="./main.js"></script>
     <script>
-        // 确保 DOM 加载完成后再创建播放器实例
+        // 页面级：拖拽与赞赏弹窗
         window.addEventListener('load', () => {
-            window.pcmPlayer = new PCMPlayer();
-            
-            // 添加拖拽相关事件处理
             const playerContainer = document.querySelector('.player-container');
-            
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                 playerContainer.addEventListener(eventName, preventDefaults, false);
             });
-            
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            
+            function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
             ['dragenter', 'dragover'].forEach(eventName => {
-                playerContainer.addEventListener(eventName, () => {
-                    playerContainer.classList.add('drag-active');
-                });
+                playerContainer.addEventListener(eventName, () => { playerContainer.classList.add('drag-active'); });
             });
-            
             ['dragleave', 'drop'].forEach(eventName => {
-                playerContainer.addEventListener(eventName, () => {
-                    playerContainer.classList.remove('drag-active');
-                });
+                playerContainer.addEventListener(eventName, () => { playerContainer.classList.remove('drag-active'); });
             });
-            
-            playerContainer.addEventListener('drop', handleDrop);
-            
-            function handleDrop(e) {
+            playerContainer.addEventListener('drop', (e) => {
                 const dt = e.dataTransfer;
-                const file = dt.files[0];
-                
-                if (file) {
-                    // 直接使用 PCMPlayer 的文件处理方法
-                    document.getElementById('fileInput').files = dt.files;
-                    const event = new Event('change');
-                    document.getElementById('fileInput').dispatchEvent(event);
+                if (dt && dt.files && dt.files[0]) {
+                    const input = document.getElementById('fileInput');
+                    input.files = dt.files;
+                    input.dispatchEvent(new Event('change'));
                 }
-            }
-            
-            function formatTime(seconds) {
-                const minutes = Math.floor(seconds / 60);
-                seconds = Math.floor(seconds % 60);
-                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            }
+            });
 
-            // 赞赏弹窗相关代码
             const rewardModal = document.getElementById('rewardModal');
             const rewardButton = document.getElementById('rewardButton');
             const closeModal = document.getElementById('closeModal');
-
-            rewardButton.addEventListener('click', () => {
-                rewardModal.classList.add('show');
-            });
-
-            closeModal.addEventListener('click', () => {
-                rewardModal.classList.remove('show');
-            });
-
-            // 点击弹窗外部关闭
-            rewardModal.addEventListener('click', (e) => {
-                if (e.target === rewardModal) {
-                    rewardModal.classList.remove('show');
-                }
-            });
+            rewardButton.addEventListener('click', () => { rewardModal.classList.add('show'); });
+            closeModal.addEventListener('click', () => { rewardModal.classList.remove('show'); });
+            rewardModal.addEventListener('click', (e) => { if (e.target === rewardModal) rewardModal.classList.remove('show'); });
         });
     </script>
 </body>
