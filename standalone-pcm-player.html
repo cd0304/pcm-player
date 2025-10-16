@@ -299,6 +299,8 @@
                 this.canvas = null;
                 this.ctx = null;
                 this.wavePoints = [];
+                this.isSeeking = false;
+                this.seekWasPlaying = false;
                 
                 this.init();
             }
@@ -360,6 +362,46 @@
                 // 播放控制
                 document.getElementById('playButton').addEventListener('click', () => this.togglePlay());
                 document.getElementById('stopButton').addEventListener('click', () => this.stop());
+
+                // 画布点击/拖拽定位
+                const getTimeFromEvent = (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+                    let x = clientX - rect.left;
+                    x = Math.max(0, Math.min(x, rect.width));
+                    const ratio = rect.width > 0 ? (x / rect.width) : 0;
+                    return (this.duration || 0) * ratio;
+                };
+
+                const onDown = (e) => {
+                    if (!this.audioBuffer || !this.duration) return;
+                    e.preventDefault();
+                    this.isSeeking = true;
+                    this.seekWasPlaying = this.isPlaying;
+                    // 暂停当前播放，避免拖动时异步推进
+                    if (this.isPlaying) this.pause();
+                    const t = getTimeFromEvent(e);
+                    this.seekToTime(t);
+                };
+                const onMove = (e) => {
+                    if (!this.isSeeking) return;
+                    e.preventDefault();
+                    const t = getTimeFromEvent(e);
+                    this.seekToTime(t);
+                };
+                const onUp = (e) => {
+                    if (!this.isSeeking) return;
+                    e.preventDefault();
+                    this.isSeeking = false;
+                    if (this.seekWasPlaying) this.play();
+                };
+
+                this.canvas.addEventListener('mousedown', onDown);
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+                this.canvas.addEventListener('touchstart', onDown, { passive: false });
+                window.addEventListener('touchmove', onMove, { passive: false });
+                window.addEventListener('touchend', onUp, { passive: false });
             }
             
             async loadFile(file) {
@@ -462,6 +504,9 @@
                 }
                 
                 this.ctx.stroke();
+
+                // 绘制播放指示线
+                this.drawPlayhead();
             }
             
             drawGrid() {
@@ -572,6 +617,8 @@
                 
                 this.updateTimeDisplay();
                 this.updateProgress();
+                // 更新指示线
+                this.drawPlayhead();
                 
                 requestAnimationFrame(() => this.startTimeUpdate());
             }
@@ -587,6 +634,35 @@
                 document.getElementById('progressBar').style.width = progress + '%';
             }
             
+            drawPlayhead() {
+                if (!this.duration || !this.canvas) return;
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                const rect = this.canvas.getBoundingClientRect();
+                // 重新绘制底图
+                // 为避免昂贵重算，这里仅绘制进度线覆盖；若出现残影，可考虑重绘波形（已在 drawWaveform 中做全量重绘）
+                const x = Math.max(0, Math.min(width, (this.currentTime / this.duration) * width));
+                // 覆盖一条细线作为指示
+                this.ctx.save();
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = '#1976D2';
+                this.ctx.lineWidth = 2;
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, height);
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+
+            seekToTime(t) {
+                if (!this.audioBuffer) return;
+                const clamped = Math.max(0, Math.min(t, this.duration || 0));
+                this.currentTime = clamped;
+                this.updateTimeDisplay();
+                this.updateProgress();
+                // 重绘波形与指示线到新位置
+                this.drawWaveform();
+            }
+
             formatTime(seconds) {
                 const mins = Math.floor(seconds / 60);
                 const secs = Math.floor(seconds % 60);

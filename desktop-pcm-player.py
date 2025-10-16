@@ -420,6 +420,8 @@ class DesktopPCMPlayerHandler(SimpleHTTPRequestHandler):
         this.canvas = null;
         this.ctx = null;
         this.wavePoints = [];
+        this.isSeeking = false;
+        this.seekWasPlaying = false;
         
         this.init();
     }
@@ -459,6 +461,45 @@ class DesktopPCMPlayerHandler(SimpleHTTPRequestHandler):
         // 播放控制
         document.getElementById('playButton').addEventListener('click', () => this.togglePlay());
         document.getElementById('stopButton').addEventListener('click', () => this.stop());
+
+        // 画布点击/拖拽定位
+        const getTimeFromEvent = (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+            let x = clientX - rect.left;
+            x = Math.max(0, Math.min(x, rect.width));
+            const ratio = rect.width > 0 ? (x / rect.width) : 0;
+            return (this.duration || 0) * ratio;
+        };
+
+        const onDown = (e) => {
+            if (!this.audioBuffer || !this.duration) return;
+            e.preventDefault();
+            this.isSeeking = true;
+            this.seekWasPlaying = this.isPlaying;
+            if (this.isPlaying) this.pause();
+            const t = getTimeFromEvent(e);
+            this.seekToTime(t);
+        };
+        const onMove = (e) => {
+            if (!this.isSeeking) return;
+            e.preventDefault();
+            const t = getTimeFromEvent(e);
+            this.seekToTime(t);
+        };
+        const onUp = (e) => {
+            if (!this.isSeeking) return;
+            e.preventDefault();
+            this.isSeeking = false;
+            if (this.seekWasPlaying) this.play();
+        };
+
+        this.canvas.addEventListener('mousedown', onDown);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        this.canvas.addEventListener('touchstart', onDown, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp, { passive: false });
     }
     
     async loadFileList() {
@@ -612,6 +653,9 @@ class DesktopPCMPlayerHandler(SimpleHTTPRequestHandler):
         }
         
         this.ctx.stroke();
+
+        // 绘制播放指示线
+        this.drawPlayhead();
     }
     
     drawGrid() {
@@ -722,6 +766,8 @@ class DesktopPCMPlayerHandler(SimpleHTTPRequestHandler):
         
         this.updateTimeDisplay();
         this.updateProgress();
+        // 更新指示线
+        this.drawPlayhead();
         
         requestAnimationFrame(() => this.startTimeUpdate());
     }
@@ -732,6 +778,30 @@ class DesktopPCMPlayerHandler(SimpleHTTPRequestHandler):
         document.getElementById('timeDisplay').textContent = `${current} / ${total}`;
     }
     
+    drawPlayhead() {
+        if (!this.duration || !this.canvas) return;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const x = Math.max(0, Math.min(width, (this.currentTime / this.duration) * width));
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = '#1976D2';
+        this.ctx.lineWidth = 2;
+        this.ctx.moveTo(x, 0);
+        this.ctx.lineTo(x, height);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    seekToTime(t) {
+        if (!this.audioBuffer) return;
+        const clamped = Math.max(0, Math.min(t, this.duration || 0));
+        this.currentTime = clamped;
+        this.updateTimeDisplay();
+        this.updateProgress();
+        this.drawWaveform();
+    }
+
     updateProgress() {
         const progress = this.duration > 0 ? (this.currentTime / this.duration) * 100 : 0;
         document.getElementById('progressBar').style.width = progress + '%';
