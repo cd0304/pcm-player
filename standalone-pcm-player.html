@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>独立PCM播放器</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #2196F3;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .file-input-section {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .file-input {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .file-input input[type="file"] {
+            display: none;
+        }
+        
+        .file-input-label {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .file-input-label:hover {
+            background: #43A047;
+        }
+        
+        .current-file {
+            padding: 15px;
+            background: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+            margin: 0;
+            font-weight: 500;
+            color: #2e7d32;
+            display: none;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .play-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .play-button:hover:not(:disabled) {
+            background: #43A047;
+        }
+        
+        .play-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .stop-button {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .stop-button:hover:not(:disabled) {
+            background: #d32f2f;
+        }
+        
+        .stop-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .progress {
+            flex: 1;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 0 15px;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: #2196F3;
+            width: 0%;
+            transition: width 0.1s;
+        }
+        
+        .time-display {
+            color: #666;
+            font-size: 14px;
+            min-width: 100px;
+            text-align: center;
+        }
+        
+        .waveform {
+            height: 120px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            margin: 20px;
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .waveform canvas {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .instructions {
+            padding: 20px;
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            margin: 20px;
+            border-radius: 4px;
+        }
+        
+        .instructions h3 {
+            margin: 0 0 10px 0;
+            color: #1976D2;
+        }
+        
+        .instructions p {
+            margin: 5px 0;
+            color: #424242;
+        }
+        
+        .file-list {
+            margin-top: 20px;
+        }
+        
+        .file-list h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafafa;
+        }
+        
+        .file-item:hover {
+            background: #e3f2fd;
+            border-color: #2196F3;
+        }
+        
+        .file-item.playing {
+            background: #e8f5e9;
+            border-color: #4CAF50;
+        }
+        
+        .file-name {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .file-size {
+            color: #666;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        .file-time {
+            color: #999;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>独立PCM播放器</h1>
+            <p>16kHz, 16bit, 单声道, 小端序 - 无需安装任何软件</p>
+        </div>
+        
+        <div class="instructions">
+            <h3>使用说明</h3>
+            <p>1. 点击"扫描data目录"按钮选择包含PCM文件的目录，系统会自动列出所有PCM文件</p>
+            <p>2. 或者点击"选择PCM文件"按钮手动选择单个PCM文件</p>
+            <p>3. 支持格式：16kHz采样率，16bit位深度，单声道，小端序</p>
+            <p>4. 点击播放按钮开始播放，支持暂停和停止</p>
+            <p>5. 可以直接拖拽PCM文件到页面上进行播放</p>
+        </div>
+        
+        <div class="file-input-section">
+            <div class="file-input">
+                <label for="fileInput" class="file-input-label">
+                    📁 选择PCM文件
+                </label>
+                <input type="file" id="fileInput" accept=".pcm">
+                <button id="scanDataBtn" class="file-input-label" style="background: #FF9800;">
+                    📂 扫描data目录
+                </button>
+                <span id="fileName" style="color: #666;">未选择文件</span>
+            </div>
+            
+            <div id="currentFile" class="current-file"></div>
+            
+            <div id="fileList" class="file-list" style="display: none;">
+                <h3>data目录中的PCM文件：</h3>
+                <div id="fileItems"></div>
+            </div>
+        </div>
+        
+        <div class="waveform">
+            <canvas id="waveformCanvas"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button id="playButton" class="play-button" disabled>播放</button>
+            <button id="stopButton" class="stop-button" disabled>停止</button>
+            <div class="progress">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <div id="timeDisplay" class="time-display">00:00 / 00:00</div>
+        </div>
+    </div>
+
+    <script>
+        class StandalonePCMPlayer {
+            constructor() {
+                this.audioContext = null;
+                this.audioBuffer = null;
+                this.source = null;
+                this.isPlaying = false;
+                this.currentTime = 0;
+                this.duration = 0;
+                this.currentFile = null;
+                this.canvas = null;
+                this.ctx = null;
+                this.wavePoints = [];
+                
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    // 初始化Web Audio API
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // 初始化画布
+                    this.canvas = document.getElementById('waveformCanvas');
+                    this.ctx = this.canvas.getContext('2d');
+                    this.resizeCanvas();
+                    
+                    // 绑定事件
+                    this.bindEvents();
+                    
+                    // 监听窗口大小变化
+                    window.addEventListener('resize', () => this.resizeCanvas());
+                    
+                } catch (error) {
+                    this.showError('初始化失败: ' + error.message);
+                }
+            }
+            
+            resizeCanvas() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.drawWaveform();
+            }
+            
+            bindEvents() {
+                // 文件选择
+                document.getElementById('fileInput').addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.loadFile(e.target.files[0]);
+                    }
+                });
+                
+                // 扫描data目录
+                document.getElementById('scanDataBtn').addEventListener('click', () => {
+                    this.scanDataDirectory();
+                });
+                
+                // 拖拽支持
+                document.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        this.loadFile(files[0]);
+                    }
+                });
+                
+                // 播放控制
+                document.getElementById('playButton').addEventListener('click', () => this.togglePlay());
+                document.getElementById('stopButton').addEventListener('click', () => this.stop());
+            }
+            
+            async loadFile(file) {
+                try {
+                    this.stop();
+                    this.currentFile = file;
+                    
+                    // 更新文件名显示
+                    document.getElementById('fileName').textContent = file.name;
+                    document.getElementById('currentFile').textContent = `当前文件: ${file.name}`;
+                    document.getElementById('currentFile').style.display = 'block';
+                    
+                    // 读取文件
+                    const arrayBuffer = await file.arrayBuffer();
+                    await this.decodePCM(arrayBuffer);
+                    
+                    // 绘制波形
+                    this.drawWaveform();
+                    
+                    // 启用播放按钮
+                    document.getElementById('playButton').disabled = false;
+                    document.getElementById('stopButton').disabled = false;
+                    
+                } catch (error) {
+                    this.showError('加载文件失败: ' + error.message);
+                }
+            }
+            
+            async decodePCM(arrayBuffer) {
+                // PCM参数：16kHz, 16bit, 单声道, 小端序
+                const sampleRate = 16000;
+                const bitDepth = 16;
+                const channels = 1;
+                const bytesPerSample = bitDepth / 8;
+                
+                // 计算样本数
+                const totalSamples = Math.floor(arrayBuffer.byteLength / (bytesPerSample * channels));
+                
+                // 创建AudioBuffer
+                this.audioBuffer = this.audioContext.createBuffer(channels, totalSamples, sampleRate);
+                
+                // 解析PCM数据
+                const view = new DataView(arrayBuffer);
+                const channelData = this.audioBuffer.getChannelData(0);
+                
+                for (let i = 0; i < totalSamples; i++) {
+                    const offset = i * bytesPerSample;
+                    // 16位小端序
+                    const sample = view.getInt16(offset, true) / 32768.0;
+                    channelData[i] = sample;
+                }
+                
+                this.duration = this.audioBuffer.duration;
+                this.currentTime = 0;
+                this.updateTimeDisplay();
+                
+                // 存储波形数据用于绘制
+                this.wavePoints = Array.from(channelData);
+            }
+            
+            drawWaveform() {
+                if (!this.wavePoints.length) return;
+                
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                const centerY = height / 2;
+                
+                this.ctx.clearRect(0, 0, width, height);
+                
+                // 绘制网格
+                this.drawGrid();
+                
+                // 绘制波形
+                const step = Math.ceil(this.wavePoints.length / width);
+                this.ctx.strokeStyle = '#2196F3';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                
+                for (let i = 0; i < width; i++) {
+                    const start = i * step;
+                    let maxAbs = 0;
+                    
+                    // 计算峰值
+                    for (let j = 0; j < step && start + j < this.wavePoints.length; j++) {
+                        const v = Math.abs(this.wavePoints[start + j]);
+                        if (v > maxAbs) maxAbs = v;
+                    }
+                    
+                    const amp = maxAbs * centerY * 0.8;
+                    const x = i;
+                    const y1 = centerY - amp;
+                    const y2 = centerY + amp;
+                    
+                    if (i === 0) {
+                        this.ctx.moveTo(x, y1);
+                    } else {
+                        this.ctx.lineTo(x, y1);
+                    }
+                    this.ctx.moveTo(x, y2);
+                }
+                
+                this.ctx.stroke();
+            }
+            
+            drawGrid() {
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                
+                this.ctx.save();
+                this.ctx.strokeStyle = '#eee';
+                this.ctx.lineWidth = 1;
+                
+                // 垂直网格
+                for (let x = 0; x <= width; x += 50) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x + 0.5, 0);
+                    this.ctx.lineTo(x + 0.5, height);
+                    this.ctx.stroke();
+                }
+                
+                // 水平网格
+                for (let y = 0; y <= height; y += 20) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y + 0.5);
+                    this.ctx.lineTo(width, y + 0.5);
+                    this.ctx.stroke();
+                }
+                
+                // 中心线
+                this.ctx.strokeStyle = '#ddd';
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, height / 2 + 0.5);
+                this.ctx.lineTo(width, height / 2 + 0.5);
+                this.ctx.stroke();
+                
+                this.ctx.restore();
+            }
+            
+            togglePlay() {
+                if (this.isPlaying) {
+                    this.pause();
+                } else {
+                    this.play();
+                }
+            }
+            
+            play() {
+                if (!this.audioBuffer) return;
+                
+                this.source = this.audioContext.createBufferSource();
+                this.source.buffer = this.audioBuffer;
+                this.source.connect(this.audioContext.destination);
+                
+                // 从当前位置开始播放
+                const startTime = this.currentTime;
+                this.source.start(0, startTime);
+                
+                this.isPlaying = true;
+                this.startTime = this.audioContext.currentTime - startTime;
+                
+                // 更新按钮状态
+                document.getElementById('playButton').textContent = '暂停';
+                
+                // 开始时间更新
+                this.startTimeUpdate();
+                
+                // 播放结束处理
+                this.source.onended = () => {
+                    this.stop();
+                };
+            }
+            
+            pause() {
+                if (this.source) {
+                    this.source.stop();
+                    this.source = null;
+                }
+                
+                this.isPlaying = false;
+                this.currentTime = this.audioContext.currentTime - this.startTime;
+                
+                // 更新按钮状态
+                document.getElementById('playButton').textContent = '播放';
+            }
+            
+            stop() {
+                if (this.source) {
+                    this.source.stop();
+                    this.source = null;
+                }
+                
+                this.isPlaying = false;
+                this.currentTime = 0;
+                
+                // 更新按钮状态
+                document.getElementById('playButton').textContent = '播放';
+                this.updateTimeDisplay();
+                this.updateProgress();
+            }
+            
+            startTimeUpdate() {
+                if (!this.isPlaying) return;
+                
+                this.currentTime = this.audioContext.currentTime - this.startTime;
+                
+                if (this.currentTime >= this.duration) {
+                    this.stop();
+                    return;
+                }
+                
+                this.updateTimeDisplay();
+                this.updateProgress();
+                
+                requestAnimationFrame(() => this.startTimeUpdate());
+            }
+            
+            updateTimeDisplay() {
+                const current = this.formatTime(this.currentTime);
+                const total = this.formatTime(this.duration);
+                document.getElementById('timeDisplay').textContent = `${current} / ${total}`;
+            }
+            
+            updateProgress() {
+                const progress = this.duration > 0 ? (this.currentTime / this.duration) * 100 : 0;
+                document.getElementById('progressBar').style.width = progress + '%';
+            }
+            
+            formatTime(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+            
+            async scanDataDirectory() {
+                try {
+                    // 使用File System Access API扫描目录
+                    if ('showDirectoryPicker' in window) {
+                        const dirHandle = await window.showDirectoryPicker();
+                        const files = [];
+                        
+                        for await (const [name, handle] of dirHandle.entries()) {
+                            if (handle.kind === 'file' && name.toLowerCase().endsWith('.pcm')) {
+                                const file = await handle.getFile();
+                                files.push({
+                                    name: name,
+                                    file: file,
+                                    size: file.size,
+                                    mtime: new Date(file.lastModified).toISOString()
+                                });
+                            }
+                        }
+                        
+                        // 按修改时间降序排序
+                        files.sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+                        
+                        this.renderFileList(files);
+                        
+                    } else {
+                        // 降级方案：提示用户选择文件
+                        alert('您的浏览器不支持目录扫描功能，请使用"选择PCM文件"按钮手动选择文件。');
+                    }
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        this.showError('扫描目录失败: ' + error.message);
+                    }
+                }
+            }
+            
+            renderFileList(files) {
+                const fileList = document.getElementById('fileList');
+                const fileItems = document.getElementById('fileItems');
+                
+                if (files.length === 0) {
+                    fileItems.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">未找到PCM文件</p>';
+                } else {
+                    fileItems.innerHTML = '';
+                    
+                    files.forEach((fileInfo, index) => {
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        fileItem.innerHTML = `
+                            <div class="file-name">${fileInfo.name}</div>
+                            <div class="file-size">${this.formatFileSize(fileInfo.size)}</div>
+                            <div class="file-time">${this.formatDate(fileInfo.mtime)}</div>
+                        `;
+                        
+                        fileItem.addEventListener('click', () => this.loadFileFromList(fileInfo));
+                        fileItems.appendChild(fileItem);
+                    });
+                }
+                
+                fileList.style.display = 'block';
+            }
+            
+            async loadFileFromList(fileInfo) {
+                try {
+                    this.stop();
+                    this.currentFile = fileInfo.file;
+                    
+                    // 更新当前文件显示
+                    document.getElementById('fileName').textContent = fileInfo.name;
+                    document.getElementById('currentFile').textContent = `当前文件: ${fileInfo.name}`;
+                    document.getElementById('currentFile').style.display = 'block';
+                    
+                    // 更新文件项样式
+                    document.querySelectorAll('.file-item').forEach(item => {
+                        item.classList.remove('playing');
+                    });
+                    event.currentTarget.classList.add('playing');
+                    
+                    // 读取文件
+                    const arrayBuffer = await fileInfo.file.arrayBuffer();
+                    await this.decodePCM(arrayBuffer);
+                    
+                    // 绘制波形
+                    this.drawWaveform();
+                    
+                    // 启用播放按钮
+                    document.getElementById('playButton').disabled = false;
+                    document.getElementById('stopButton').disabled = false;
+                    
+                } catch (error) {
+                    this.showError('加载文件失败: ' + error.message);
+                }
+            }
+            
+            formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+            
+            formatDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleString('zh-CN');
+            }
+            
+            showError(message) {
+                alert('错误: ' + message);
+            }
+        }
+        
+        // 页面加载完成后初始化播放器
+        window.addEventListener('load', () => {
+            new StandalonePCMPlayer();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+name: Build PCM Player
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        python-version: [3.9, 3.10, 3.11]
+        exclude:
+          - os: windows-latest
+            python-version: 3.9
+          - os: macos-latest
+            python-version: 3.9
+          - os: ubuntu-latest
+            python-version: 3.9
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+    
+    - name: Create data directory
+      run: mkdir -p data
+    
+    - name: Build executable
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data;data" desktop-pcm-player.py
+        else
+          pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data:data" desktop-pcm-player.py
+        fi
+    
+    - name: Upload Windows executable
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v3
+      with:
+        name: pcm-player-windows
+        path: dist/PCM播放器.exe
+    
+    - name: Upload macOS executable
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v3
+      with:
+        name: pcm-player-macos
+        path: dist/PCM播放器
+    
+    - name: Upload Linux executable
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v3
+      with:
+        name: pcm-player-linux
+        path: dist/PCM播放器
