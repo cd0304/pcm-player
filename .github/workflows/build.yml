@@ -12,14 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        python-version: [3.9, 3.10, 3.11]
-        exclude:
-          - os: windows-latest
-            python-version: 3.9
-          - os: macos-latest
-            python-version: 3.9
-          - os: ubuntu-latest
-            python-version: 3.9
+        python-version: [3.11]
 
     steps:
     - uses: actions/checkout@v3
@@ -47,21 +40,21 @@ jobs:
     
     - name: Upload Windows executable
       if: matrix.os == 'windows-latest'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pcm-player-windows
         path: dist/PCM播放器.exe
     
     - name: Upload macOS executable
       if: matrix.os == 'macos-latest'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pcm-player-macos
         path: dist/PCM播放器
     
     - name: Upload Linux executable
       if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pcm-player-linux
         path: dist/PCM播放器
