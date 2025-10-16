@@ -30,13 +30,14 @@ jobs:
     - name: Create data directory
       run: mkdir -p data
     
-    - name: Build executable
-      run: |
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data;data" desktop-pcm-player.py
-        else
-          pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data:data" desktop-pcm-player.py
-        fi
+    - name: Build executable (Windows)
+      if: matrix.os == 'windows-latest'
+      run: pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data;data" desktop-pcm-player.py
+      shell: cmd
+    
+    - name: Build executable (Unix)
+      if: matrix.os != 'windows-latest'
+      run: pyinstaller --onefile --windowed --name "PCM播放器" --add-data "data:data" desktop-pcm-player.py
     
     - name: Upload Windows executable
       if: matrix.os == 'windows-latest'
