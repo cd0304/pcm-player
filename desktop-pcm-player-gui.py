@@ -30,11 +30,16 @@ class PCMPlayerGUI:
         self.current_time = 0
         self.is_playing = False
         self.play_thread = None
+        self.start_time = 0
+        self.paused_time = 0
         
         # 波形数据
         self.waveform_data = []
         self.canvas_width = 800
         self.canvas_height = 200
+        
+        # 文件数据
+        self.current_file_path = None
         
         self.setup_ui()
         self.load_data_directory()
@@ -104,6 +109,7 @@ class PCMPlayerGUI:
         self.canvas.pack()
         self.canvas.bind('<Button-1>', self.on_canvas_click)
         self.canvas.bind('<B1-Motion>', self.on_canvas_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_canvas_release)
         
         # 控制框架
         control_frame = Frame(main_frame, bg='#f5f5f5')
@@ -144,28 +150,42 @@ class PCMPlayerGUI:
                                    command=self.on_progress_change,
                                    length=400, resolution=0.1)
         self.progress_scale.pack(fill='x', pady=10)
+        
+        # 拖拽状态
+        self.is_dragging = False
     
     def load_data_directory(self):
         """加载data目录中的文件"""
-        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+        # 获取data目录路径
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        data_dir = os.path.join(base_dir, 'data')
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
+            print(f"已创建data目录: {data_dir}")
         
         # 清空列表
         self.file_listbox.delete(0, tk.END)
         
         # 扫描PCM文件
         pcm_files = []
-        for filename in os.listdir(data_dir):
-            if filename.lower().endswith('.pcm'):
-                filepath = os.path.join(data_dir, filename)
-                stat = os.stat(filepath)
-                pcm_files.append({
-                    'name': filename,
-                    'path': filepath,
-                    'size': stat.st_size,
-                    'mtime': stat.st_mtime
-                })
+        try:
+            for filename in os.listdir(data_dir):
+                if filename.lower().endswith('.pcm'):
+                    filepath = os.path.join(data_dir, filename)
+                    stat = os.stat(filepath)
+                    pcm_files.append({
+                        'name': filename,
+                        'path': filepath,
+                        'size': stat.st_size,
+                        'mtime': stat.st_mtime
+                    })
+        except Exception as e:
+            print(f"扫描data目录失败: {e}")
+            return
         
         # 按修改时间排序
         pcm_files.sort(key=lambda x: x['mtime'], reverse=True)
@@ -175,7 +195,13 @@ class PCMPlayerGUI:
             size_mb = file_info['size'] / (1024 * 1024)
             display_text = f"{file_info['name']} ({size_mb:.1f} MB)"
             self.file_listbox.insert(tk.END, display_text)
-            self.file_listbox.file_data = pcm_files  # 存储文件数据
+        
+        # 存储文件数据
+        self.file_listbox.file_data = pcm_files
+        
+        # 如果有文件，自动加载第一个
+        if pcm_files:
+            self.load_pcm_file(pcm_files[0]['path'])
     
     def select_file(self):
         """选择PCM文件"""
@@ -203,6 +229,7 @@ class PCMPlayerGUI:
             self.audio_data = self.parse_pcm_data(data)
             self.duration = len(self.audio_data) / self.sample_rate
             self.current_time = 0
+            self.current_file_path = file_path
             
             # 生成波形数据
             self.generate_waveform()
@@ -216,6 +243,8 @@ class PCMPlayerGUI:
             # 绘制波形
             self.draw_waveform()
             self.update_time_display()
+            
+            print(f"已加载文件: {filename}, 时长: {self.duration:.2f}秒")
             
         except Exception as e:
             messagebox.showerror("错误", f"加载文件失败: {str(e)}")
@@ -295,21 +324,31 @@ class PCMPlayerGUI:
         if self.duration > 0:
             x = event.x
             self.current_time = (x / self.canvas_width) * self.duration
+            self.paused_time = self.current_time
             self.update_time_display()
+            self.update_progress()
             self.draw_playhead()
     
     def on_canvas_drag(self, event):
         """画布拖拽事件"""
         if self.duration > 0:
+            self.is_dragging = True
             x = event.x
             self.current_time = max(0, min(self.duration, (x / self.canvas_width) * self.duration))
+            self.paused_time = self.current_time
             self.update_time_display()
+            self.update_progress()
             self.draw_playhead()
+    
+    def on_canvas_release(self, event):
+        """画布释放事件"""
+        self.is_dragging = False
     
     def on_progress_change(self, value):
         """进度条变化事件"""
         if self.duration > 0:
             self.current_time = (float(value) / 100) * self.duration
+            self.paused_time = self.current_time
             self.update_time_display()
             self.draw_playhead()
     
@@ -328,6 +367,9 @@ class PCMPlayerGUI:
         self.is_playing = True
         self.play_btn.config(text="暂停")
         
+        # 记录开始时间
+        self.start_time = time.time() - self.current_time
+        
         # 在新线程中播放
         self.play_thread = threading.Thread(target=self.play_audio)
         self.play_thread.daemon = True
@@ -336,28 +378,33 @@ class PCMPlayerGUI:
     def pause(self):
         """暂停播放"""
         self.is_playing = False
+        self.paused_time = self.current_time
         self.play_btn.config(text="播放")
     
     def stop(self):
         """停止播放"""
         self.is_playing = False
         self.current_time = 0
+        self.paused_time = 0
         self.play_btn.config(text="播放")
         self.update_time_display()
+        self.update_progress()
         self.draw_playhead()
     
     def play_audio(self):
         """播放音频（模拟）"""
-        start_time = time.time()
-        
         while self.is_playing and self.current_time < self.duration:
-            elapsed = time.time() - start_time
-            self.current_time = elapsed
+            self.current_time = time.time() - self.start_time
+            
+            # 限制在有效范围内
+            if self.current_time >= self.duration:
+                self.current_time = self.duration
+                break
             
             # 更新UI（在主线程中）
             self.root.after(0, self.update_time_display)
-            self.root.after(0, self.draw_playhead)
             self.root.after(0, self.update_progress)
+            self.root.after(0, self.draw_playhead)
             
             time.sleep(0.1)
         
